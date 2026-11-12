@@ -1,3 +1,10 @@
+      - name: Diagnostico
+        run: |
+          ls -la
+          echo "---- settings.gradle ----"
+          cat settings.gradle
+          echo "---- carpeta app ----"
+          ls -la app
 name: Build Android APK
 
 on:
