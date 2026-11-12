@@ -1,0 +1,24 @@
+package com.layla.bot;
+
+import android.accessibilityservice.AccessibilityService;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.util.Log;
+
+public class LaylaAccessibilityService extends AccessibilityService {
+    private static final String TAG = "LaylaBotService";
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode == null) return;
+
+        // Aquí procesaremos los mensajes del chat próximamente
+        Log.d(TAG, "Pantalla leída correctamente");
+    }
+
+    @Override
+    public void onInterrupt() {
+        Log.d(TAG, "Servicio de accesibilidad interrumpido");
+    }
+}
