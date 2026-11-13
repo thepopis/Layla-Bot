@@ -3,6 +3,8 @@ package com.layla.bot;
 import android.accessibilityservice.AccessibilityService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.graphics.Path;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -146,7 +148,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    // ---------- Prueba de escritura (4 alternativas) ----------
+    // ---------- Prueba de escritura (dispatchGesture + menú Pegar) ----------
 
     private void escribirPrueba(String texto) {
         final AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -172,79 +174,162 @@ public class LaylaAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // Primero cargar el portapapeles ANTES de cualquier acción
+        // 1. Cargar el portapapeles ANTES de cualquier gesto
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText("layla", texto));
         }
 
-        // Probar todas las alternativas en secuencia, la que funcione primero gana
-        StringBuilder diag = new StringBuilder();
-
-        // --- Alternativa 1: SET_TEXT sin click previo, con selección completa ---
-        Bundle args1 = new Bundle();
-        args1.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
-        args1.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
-        args1.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, texto.length());
-        boolean a1 = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args1);
-        String t1 = leerTexto(caja);
-        diag.append("A1_setText=").append(a1).append("/").append(t1);
-        if (t1 != null && t1.contains("prueba")) {
-            pruebaEstado = diag.toString();
-            finalizarPrueba(cajas, root);
+        // 2. Obtener coordenadas del EditText en pantalla
+        Rect rect = new Rect();
+        caja.getBoundsInScreen(rect);
+        if (rect.width() <= 0 || rect.height() <= 0) {
+            pruebaEstado = "Falló: bounds de la caja inválidos (" + rect + ")";
+            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+            recycleNode(root);
             return;
         }
 
-        // --- Alternativa 2: click + SET_TEXT ---
-        boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-        Bundle args2 = new Bundle();
-        args2.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
-        boolean a2 = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args2);
-        String t2 = leerTexto(caja);
-        diag.append(" A2_click=").append(click).append(" setText=").append(a2)
-            .append("/").append(t2);
-        if (t2 != null && t2.contains("prueba")) {
-            pruebaEstado = diag.toString();
-            finalizarPrueba(cajas, root);
+        int cx = rect.centerX();
+        int cy = rect.centerY();
+        pruebaEstado = "Long-press en (" + cx + "," + cy + ")... esperando menú.";
+
+        // 3. dispatchGesture con long-press (duración 700ms)
+        Path path = new Path();
+        path.moveTo(cx, cy);
+        android.accessibilityservice.GestureDescription.StrokeDescription stroke =
+                new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0L, 700L);
+        android.accessibilityservice.GestureDescription gesture =
+                new android.accessibilityservice.GestureDescription.Builder()
+                        .addStroke(stroke)
+                        .build();
+
+        boolean dispatched = dispatchGesture(gesture,
+                new android.accessibilityservice.AccessibilityService.GestureResultCallback() {
+                    @Override
+                    public void onCompleted(android.accessibilityservice.GestureDescription g) {
+                        super.onCompleted(g);
+                        handler.postDelayed(() -> {
+                            try {
+                                pulsarPegar(cajas, root);
+                            } catch (Exception e) {
+                                pruebaEstado = "Excepción buscando Pegar: " + e;
+                            }
+                        }, 800);
+                    }
+
+                    @Override
+                    public void onCancelled(android.accessibilityservice.GestureDescription g) {
+                        super.onCancelled(g);
+                        pruebaEstado = "Falló: gesto cancelado por el sistema.";
+                        for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+                        recycleNode(root);
+                    }
+                }, null);
+
+        if (!dispatched) {
+            pruebaEstado = "Falló: dispatchGesture devolvió false.";
+            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+            recycleNode(root);
+        }
+    }
+
+    private void pulsarPegar(List<AccessibilityNodeInfo> cajas, AccessibilityNodeInfo root) {
+        AccessibilityNodeInfo raiz = getRootInActiveWindow();
+        if (raiz == null) {
+            pruebaEstado = "Falló: no hay ventana activa al buscar Pegar.";
+            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+            recycleNode(root);
             return;
         }
 
-        // --- Alternativa 3: click + PASTE ---
-        boolean a3 = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
-        String t3 = leerTexto(caja);
-        diag.append(" A3_paste=").append(a3).append("/").append(t3);
-        if (t3 != null && t3.contains("prueba")) {
-            pruebaEstado = diag.toString();
-            finalizarPrueba(cajas, root);
-            return;
-        }
+        try {
+            AccessibilityNodeInfo botonPegar = buscarPorTexto(raiz, "Pegar", 0);
+            if (botonPegar == null) {
+                botonPegar = buscarPorTexto(raiz, "Paste", 0);
+            }
+            if (botonPegar == null) {
+                pruebaEstado = "Menú apareció pero no encontré 'Pegar'. Volcado parcial:\n"
+                        + volcarMenu(raiz);
+                for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+                recycleNode(root);
+                recycleNode(raiz);
+                return;
+            }
 
-        // --- Alternativa 4: SET_TEXT en el padre (ll_input_msg) ---
-        AccessibilityNodeInfo padre = caja.getParent();
-        if (padre != null) {
-            Bundle args4 = new Bundle();
-            args4.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
-            boolean a4 = padre.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args4);
-            String t4 = leerTexto(caja);
-            diag.append(" A4_padre=").append(a4).append("/").append(t4);
-            recycleNode(padre);
-        }
+            AccessibilityNodeInfo clickable = buscarPadreClickable(botonPegar);
+            boolean ok = (clickable != null ? clickable : botonPegar)
+                    .performAction(AccessibilityNodeInfo.ACTION_CLICK);
 
-        pruebaEstado = "NINGUNA FUNCIONÓ. " + diag.toString();
-        finalizarPrueba(cajas, root);
+            String textoFinal = leerTexto(cajas.get(0));
+            pruebaEstado = "Long-press OK, Pegar clickeado=" + ok + ". Texto final: " + textoFinal;
+
+            if (clickable != null && clickable != botonPegar) recycleNode(clickable);
+            recycleNode(botonPegar);
+
+            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+            recycleNode(root);
+            recycleNode(raiz);
+
+            handler.removeCallbacks(leer);
+            handler.postDelayed(leer, 1500);
+        } catch (Exception e) {
+            pruebaEstado = "Excepción en pulsarPegar: " + e;
+            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+            recycleNode(root);
+            recycleNode(raiz);
+        }
+    }
+
+    private AccessibilityNodeInfo buscarPorTexto(AccessibilityNodeInfo n, String buscado, int depth) {
+        if (n == null || depth > 30) return null;
+        CharSequence t = n.getText();
+        CharSequence d = n.getContentDescription();
+        if ((t != null && t.toString().equalsIgnoreCase(buscado))
+                || (d != null && d.toString().equalsIgnoreCase(buscado))) {
+            return n;
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = n.getChild(i);
+                AccessibilityNodeInfo found = buscarPorTexto(child, buscado, depth + 1);
+                if (found != null) {
+                    if (found != child) recycleNode(child);
+                    return found;
+                }
+            } finally {
+                if (child != null) {
+                    // Solo reciclar si no se devolvió
+                }
+            }
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo buscarPadreClickable(AccessibilityNodeInfo n) {
+        AccessibilityNodeInfo cur = n;
+        int limit = 5;
+        while (cur != null && limit-- > 0) {
+            if (cur.isClickable()) return cur;
+            AccessibilityNodeInfo p = cur.getParent();
+            if (cur != n) recycleNode(cur);
+            cur = p;
+        }
+        return null;
+    }
+
+    private String volcarMenu(AccessibilityNodeInfo n) {
+        StringBuilder sb = new StringBuilder();
+        volcar(n, 0, sb);
+        if (sb.length() > 2000) return sb.substring(0, 2000) + "...";
+        return sb.toString();
     }
 
     private static String leerTexto(AccessibilityNodeInfo n) {
         if (n == null) return "null";
         CharSequence t = n.getText();
         return t == null ? "null" : "\"" + t.toString() + "\"";
-    }
-
-    private void finalizarPrueba(List<AccessibilityNodeInfo> cajas, AccessibilityNodeInfo root) {
-        for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-        recycleNode(root);
-        handler.removeCallbacks(leer);
-        handler.postDelayed(leer, 1500);
     }
 
     // ---------- Utilidades ----------
