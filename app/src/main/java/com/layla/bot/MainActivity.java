@@ -24,6 +24,7 @@ public class MainActivity extends AppCompatActivity {
         Button copiar = findViewById(R.id.btn_copiar);
         Button ajustes = findViewById(R.id.btn_ajustes);
         Button prueba = findViewById(R.id.btn_prueba);
+        Button siguiente = findViewById(R.id.btn_siguiente);
 
         actualizar.setOnClickListener(v -> salida.setText(LaylaAccessibilityService.informe()));
 
@@ -41,6 +42,12 @@ public class MainActivity extends AppCompatActivity {
         prueba.setOnClickListener(v -> {
             LaylaAccessibilityService.programarPruebaEscritura();
             Toast.makeText(this, "Ve a Layla y abre un chat. Escribo en 6 segundos.",
+                    Toast.LENGTH_LONG).show();
+        });
+
+        siguiente.setOnClickListener(v -> {
+            LaylaAccessibilityService.programarPruebaSiguiente();
+            Toast.makeText(this, "Ve a Layla y abre un chat. Pulso en 6 segundos.",
                     Toast.LENGTH_LONG).show();
         });
     }
