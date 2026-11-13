@@ -22,6 +22,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
 
     private static volatile String estado = "Aún no se ha leído ninguna pantalla.";
     private static volatile String pruebaEstado = "(sin probar)";
+    private static volatile String siguienteEstado = "(sin probar)";
     private static volatile String ultimoEntrante = "(ninguno)";
     private static volatile String conversacion = "";
     private static volatile String pantalla = "";
@@ -64,6 +65,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
         return aviso
                 + "ESTADO: " + estado
                 + "\nPRUEBA DE ESCRITURA: " + pruebaEstado
+                + "\nPRUEBA SIGUIENTE CHAT: " + siguienteEstado
                 + "\n\nÚLTIMO MENSAJE ENTRANTE:\n" + ultimoEntrante
                 + "\n\nCONVERSACIÓN VISIBLE:\n" + conversacion
                 + "\n--- PANTALLA ---\n" + pantalla;
@@ -77,6 +79,16 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
         pruebaEstado = "Esperando 6 segundos... ve a Layla y abre un chat.";
         s.handler.postDelayed(() -> s.escribirPrueba("hola cariño como estás"), 6000);
+    }
+
+    public static void programarPruebaSiguiente() {
+        final LaylaAccessibilityService s = instance;
+        if (s == null) {
+            siguienteEstado = "⚠️ El servicio no está activo.";
+            return;
+        }
+        siguienteEstado = "Esperando 6 segundos... ve a Layla y abre un chat.";
+        s.handler.postDelayed(() -> s.pulsarSiguiente(), 6000);
     }
 
     // ---------- Lectura del chat ----------
@@ -279,6 +291,63 @@ public class LaylaAccessibilityService extends AccessibilityService {
             }
         } catch (Exception e) {
             pruebaEstado = "Excepción enviando: " + e;
+        } finally {
+            recycleNode(root);
+            handler.removeCallbacks(leer);
+            handler.postDelayed(leer, 1500);
+        }
+    }
+
+    // ---------- Prueba: botón de siguiente chat ----------
+
+    private String apodoActual(AccessibilityNodeInfo root) {
+        AccessibilityNodeInfo n = buscarPorId(root, "tv_nickname");
+        if (n == null) return "(sin apodo)";
+        try {
+            CharSequence t = n.getText();
+            return t == null ? "(vacío)" : t.toString();
+        } finally {
+            recycleNode(n);
+        }
+    }
+
+    private void pulsarSiguiente() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        try {
+            if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
+                siguienteEstado = "Falló: a los 6 segundos no estabas en Layla.";
+                return;
+            }
+            AccessibilityNodeInfo boton = buscarPorId(root, "ll_next_unread");
+            if (boton == null) {
+                siguienteEstado = "No veo ll_next_unread en esta pantalla.";
+                return;
+            }
+            final String antes = apodoActual(root);
+            try {
+                boolean ok = boton.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                siguienteEstado = "Click en ll_next_unread=" + ok
+                        + ". Chat antes: " + antes + ". Verificando...";
+            } finally {
+                recycleNode(boton);
+            }
+            handler.postDelayed(() -> verificarSalto(antes), 1500);
+        } finally {
+            recycleNode(root);
+        }
+    }
+
+    private void verificarSalto(String antes) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        try {
+            if (root == null) {
+                siguienteEstado = "No hay ventana activa para verificar.";
+                return;
+            }
+            String ahora = apodoActual(root);
+            siguienteEstado = antes.equals(ahora)
+                    ? "El chat NO cambió (sigue: " + ahora + "). Este botón no salta de chat."
+                    : "SALTÓ de '" + antes + "' a '" + ahora + "'.";
         } finally {
             recycleNode(root);
             handler.removeCallbacks(leer);
