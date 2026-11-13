@@ -1,9 +1,13 @@
 package com.layla.bot;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.graphics.Path;
+import android.graphics.Rect;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -145,107 +149,164 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    // ---------- Prueba de escritura (click + paste + detectar botón enviar) ----------
+    // ---------- Prueba: click + pegar + enviar ----------
 
     private void escribirPrueba(String texto) {
-        final AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
-            pruebaEstado = "Falló: a los 6 segundos no estabas en Layla.";
-            recycleNode(root);
-            return;
-        }
-
-        final List<AccessibilityNodeInfo> cajas =
-                root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/et_input_msg");
-        if (cajas == null || cajas.isEmpty()) {
-            pruebaEstado = "Falló: no encuentro la caja de texto (abre un chat).";
-            recycleNode(root);
-            return;
-        }
-
-        final AccessibilityNodeInfo caja = cajas.get(0);
-        if (!caja.isEditable()) {
-            pruebaEstado = "Falló: el nodo encontrado no es editable.";
-            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-            recycleNode(root);
-            return;
-        }
-
-        // 1. Cargar el portapapeles
-        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        if (cm != null) {
-            cm.setPrimaryClip(ClipData.newPlainText("layla", texto));
-        }
-
-        // 2. Click en la caja para abrir el teclado y darle foco real
-        boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-        pruebaEstado = "Click=" + click + ", esperando 400ms...";
-
-        // 3. Esperar y pegar
-        handler.postDelayed(() -> {
-            try {
-                boolean paste = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
-                pruebaEstado = "Click=" + click + ", paste=" + paste
-                        + ". Esperando 500ms para verificar...";
-
-                // 4. Verificar: buscar el botón de enviar en el árbol
-                handler.postDelayed(() -> verificarYBuscarEnviar(cajas, root), 500);
-            } catch (Exception e) {
-                pruebaEstado = "Excepción en paste: " + e;
-                for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-                recycleNode(root);
-            }
-        }, 400);
-    }
-
-    private void verificarYBuscarEnviar(List<AccessibilityNodeInfo> cajas, AccessibilityNodeInfo root) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
         try {
-            AccessibilityNodeInfo raizAhora = getRootInActiveWindow();
-            if (raizAhora == null) {
-                pruebaEstado = "No hay ventana activa para verificar.";
-                for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-                recycleNode(root);
+            if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
+                pruebaEstado = "Falló: a los 6 segundos no estabas en Layla.";
                 return;
             }
 
-            // Volver a leer la caja refrescada
-            List<AccessibilityNodeInfo> cajasAhora =
-                    raizAhora.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/et_input_msg");
-            String textoCaja = "null";
-            if (cajasAhora != null && !cajasAhora.isEmpty()) {
-                CharSequence t = cajasAhora.get(0).getText();
-                textoCaja = t == null ? "null" : "\"" + t.toString() + "\"";
-                for (AccessibilityNodeInfo n : cajasAhora) recycleNode(n);
+            AccessibilityNodeInfo caja = buscarPorId(root, "et_input_msg");
+            if (caja == null) {
+                pruebaEstado = "Falló: no encuentro la caja de texto (abre un chat).";
+                return;
             }
 
-            // Buscar el panel de chat y volcarlo para detectar el botón de enviar
-            List<AccessibilityNodeInfo> paneles =
-                    raizAhora.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/ll_chat_panel");
-            StringBuilder sb = new StringBuilder();
-            if (paneles != null && !paneles.isEmpty()) {
-                volcar(paneles.get(0), 0, sb);
-                for (AccessibilityNodeInfo n : paneles) recycleNode(n);
-            } else {
-                sb.append("(ll_chat_panel no encontrado)");
+            try {
+                if (!caja.isEditable()) {
+                    pruebaEstado = "Falló: el nodo encontrado no es editable.";
+                    return;
+                }
+
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("layla", texto));
+                }
+
+                boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                pruebaEstado = "Click=" + click + ", esperando 400 ms...";
+                handler.postDelayed(() -> pegar(texto, click), 400);
+            } finally {
+                recycleNode(caja);
             }
-
-            pruebaEstado = "Click+paste OK. Texto caja ahora: " + textoCaja
-                    + "\n--- PANEL DE CHAT ---\n" + sb;
-
-            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+        } finally {
             recycleNode(root);
-            recycleNode(raizAhora);
+        }
+    }
 
+    private void pegar(String texto, boolean click) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        try {
+            if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
+                pruebaEstado = "Falló: saliste de Layla antes de pegar.";
+                return;
+            }
+
+            AccessibilityNodeInfo caja = buscarPorId(root, "et_input_msg");
+            if (caja == null) {
+                pruebaEstado = "Falló: la caja de texto desapareció.";
+                return;
+            }
+
+            try {
+                caja.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                boolean paste = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+                boolean setText = false;
+                if (!paste) {
+                    Bundle args = new Bundle();
+                    args.putCharSequence(
+                            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
+                    setText = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+                }
+                pruebaEstado = "Click=" + click + ", paste=" + paste + ", setText=" + setText
+                        + ". Esperando 800 ms para que aparezca el botón de enviar...";
+            } finally {
+                recycleNode(caja);
+            }
+
+            handler.postDelayed(() -> enviarMensaje(), 800);
+        } finally {
+            recycleNode(root);
+        }
+    }
+
+    private void enviarMensaje() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        try {
+            if (root == null) {
+                pruebaEstado = "No hay ventana activa al buscar iv_send.";
+                return;
+            }
+
+            AccessibilityNodeInfo boton = buscarPorId(root, "iv_send");
+            if (boton == null) {
+                pruebaEstado = "No apareció iv_send. ¿El pegado falló?"
+                        + "\n--- PANEL DE CHAT ---\n" + volcarPanel(root);
+                return;
+            }
+
+            try {
+                // Vía 1: click directo
+                boolean clickDirecto = boton.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+
+                // Vía 2: click en el padre
+                boolean clickPadre = false;
+                if (!clickDirecto) {
+                    AccessibilityNodeInfo padre = boton.getParent();
+                    if (padre != null) {
+                        clickPadre = padre.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        recycleNode(padre);
+                    }
+                }
+
+                if (clickDirecto || clickPadre) {
+                    pruebaEstado = "iv_send: clickDirecto=" + clickDirecto
+                            + ", clickPadre=" + clickPadre;
+                    return;
+                }
+
+                // Vía 3: toque por coordenadas
+                Rect rect = new Rect();
+                boton.getBoundsInScreen(rect);
+                if (rect.width() <= 0 || rect.height() <= 0) {
+                    pruebaEstado = "iv_send encontrado, pero con bounds inválidos.";
+                    return;
+                }
+
+                Path path = new Path();
+                path.moveTo(rect.centerX(), rect.centerY());
+                GestureDescription gesture = new GestureDescription.Builder()
+                        .addStroke(new GestureDescription.StrokeDescription(path, 0L, 100L))
+                        .build();
+                boolean ok = dispatchGesture(gesture, null, null);
+                pruebaEstado = "iv_send en (" + rect.centerX() + "," + rect.centerY() + "). "
+                        + "clickDirecto=false, clickPadre=false, tapGestual=" + ok;
+            } finally {
+                recycleNode(boton);
+            }
+        } catch (Exception e) {
+            pruebaEstado = "Excepción enviando: " + e;
+        } finally {
+            recycleNode(root);
             handler.removeCallbacks(leer);
             handler.postDelayed(leer, 1500);
-        } catch (Exception e) {
-            pruebaEstado = "Excepción verificando: " + e;
-            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-            recycleNode(root);
         }
     }
 
     // ---------- Utilidades ----------
+
+    private static AccessibilityNodeInfo buscarPorId(AccessibilityNodeInfo root, String corto) {
+        List<AccessibilityNodeInfo> lista =
+                root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/" + corto);
+        if (lista == null || lista.isEmpty()) return null;
+        for (int i = 1; i < lista.size(); i++) recycleNode(lista.get(i));
+        return lista.get(0);
+    }
+
+    private String volcarPanel(AccessibilityNodeInfo root) {
+        AccessibilityNodeInfo panel = buscarPorId(root, "ll_chat_panel");
+        if (panel == null) return "(ll_chat_panel no encontrado)";
+        try {
+            StringBuilder sb = new StringBuilder();
+            volcar(panel, 0, sb);
+            return sb.toString();
+        } finally {
+            recycleNode(panel);
+        }
+    }
 
     private static boolean esId(AccessibilityNodeInfo n, String corto) {
         String id = n.getViewIdResourceName();
