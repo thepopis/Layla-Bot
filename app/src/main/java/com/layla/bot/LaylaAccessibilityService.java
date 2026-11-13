@@ -76,7 +76,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
             return;
         }
         pruebaEstado = "Esperando 6 segundos... ve a Layla y abre un chat.";
-        s.handler.postDelayed(() -> s.escribirPrueba("prueba del bot"), 6000);
+        s.handler.postDelayed(() -> s.escribirPrueba("hola cariño como estás"), 6000);
     }
 
     // ---------- Lectura del chat ----------
