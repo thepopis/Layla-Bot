@@ -18,54 +18,47 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # NO pedimos paquetes específicos para evitar el prompt interactivo.
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # 1. Instalar Gradle 8.5 y ponerlo en el PATH
+      - name: Setup Gradle 8.5
+        uses: gradle/actions/setup-gradle@v3
         with:
-          packages: ''
+          gradle-version: 8.5
 
-      # Aceptamos licencias de forma NO interactiva con 'yes |'.
+      # 2. Aceptar licencias del SDK sin prompt interactivo
       - name: Accept Android SDK licenses
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
-      # ---- CACHÉ DEL KEYSTORE (para que las actualizaciones se instalen sin desinstalar) ----
+      # 3. Generar el wrapper si no existe (apuntando a 8.5)
+      - name: Generate Gradle Wrapper (8.5)
+        run: |
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version 8.5
+          fi
+          # Forzar la versión en el wrapper por si el archivo ya existía con otra
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.5-all.zip|' gradle/wrapper/gradle-wrapper.properties
+          chmod +x gradlew
+
+      # 4. Cachear el debug.keystore para que la firma sea idéntica siempre
       - name: Cache Debug Keystore
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
           key: debug-keystore-layla-bot-v1
-          restore-keys: |
-            debug-keystore-layla-bot-
 
       - name: Ensure Debug Keystore Exists
         run: |
           mkdir -p ~/.android
           if [ ! -f ~/.android/debug.keystore ]; then
-            echo "Generando keystore nuevo (primera vez)..."
             keytool -genkey -v \
               -keystore ~/.android/debug.keystore \
               -storepass android \
               -alias androiddebugkey \
               -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
-          else
-            echo "Keystore encontrado en caché, reutilizando."
           fi
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Generate Gradle Wrapper
-        run: |
-          if [ ! -f "gradlew" ]; then
-            gradle wrapper --gradle-version 8.5
-          fi
-          chmod +x gradlew
-
+      # 5. Compilar usando el WRAPPER (./gradlew), no el comando gradle directo
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
