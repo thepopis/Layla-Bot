@@ -3,10 +3,7 @@ package com.layla.bot;
 import android.accessibilityservice.AccessibilityService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.graphics.Path;
-import android.graphics.Rect;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -148,7 +145,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    // ---------- Prueba de escritura (dispatchGesture + menú Pegar) ----------
+    // ---------- Prueba de escritura (click + paste + detectar botón enviar) ----------
 
     private void escribirPrueba(String texto) {
         final AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -174,162 +171,78 @@ public class LaylaAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // 1. Cargar el portapapeles ANTES de cualquier gesto
+        // 1. Cargar el portapapeles
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText("layla", texto));
         }
 
-        // 2. Obtener coordenadas del EditText en pantalla
-        Rect rect = new Rect();
-        caja.getBoundsInScreen(rect);
-        if (rect.width() <= 0 || rect.height() <= 0) {
-            pruebaEstado = "Falló: bounds de la caja inválidos (" + rect + ")";
-            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-            recycleNode(root);
-            return;
-        }
+        // 2. Click en la caja para abrir el teclado y darle foco real
+        boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        pruebaEstado = "Click=" + click + ", esperando 400ms...";
 
-        int cx = rect.centerX();
-        int cy = rect.centerY();
-        pruebaEstado = "Long-press en (" + cx + "," + cy + ")... esperando menú.";
+        // 3. Esperar y pegar
+        handler.postDelayed(() -> {
+            try {
+                boolean paste = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+                pruebaEstado = "Click=" + click + ", paste=" + paste
+                        + ". Esperando 500ms para verificar...";
 
-        // 3. dispatchGesture con long-press (duración 700ms)
-        Path path = new Path();
-        path.moveTo(cx, cy);
-        android.accessibilityservice.GestureDescription.StrokeDescription stroke =
-                new android.accessibilityservice.GestureDescription.StrokeDescription(path, 0L, 700L);
-        android.accessibilityservice.GestureDescription gesture =
-                new android.accessibilityservice.GestureDescription.Builder()
-                        .addStroke(stroke)
-                        .build();
-
-        boolean dispatched = dispatchGesture(gesture,
-                new android.accessibilityservice.AccessibilityService.GestureResultCallback() {
-                    @Override
-                    public void onCompleted(android.accessibilityservice.GestureDescription g) {
-                        super.onCompleted(g);
-                        handler.postDelayed(() -> {
-                            try {
-                                pulsarPegar(cajas, root);
-                            } catch (Exception e) {
-                                pruebaEstado = "Excepción buscando Pegar: " + e;
-                            }
-                        }, 800);
-                    }
-
-                    @Override
-                    public void onCancelled(android.accessibilityservice.GestureDescription g) {
-                        super.onCancelled(g);
-                        pruebaEstado = "Falló: gesto cancelado por el sistema.";
-                        for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-                        recycleNode(root);
-                    }
-                }, null);
-
-        if (!dispatched) {
-            pruebaEstado = "Falló: dispatchGesture devolvió false.";
-            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-            recycleNode(root);
-        }
-    }
-
-    private void pulsarPegar(List<AccessibilityNodeInfo> cajas, AccessibilityNodeInfo root) {
-        AccessibilityNodeInfo raiz = getRootInActiveWindow();
-        if (raiz == null) {
-            pruebaEstado = "Falló: no hay ventana activa al buscar Pegar.";
-            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-            recycleNode(root);
-            return;
-        }
-
-        try {
-            AccessibilityNodeInfo botonPegar = buscarPorTexto(raiz, "Pegar", 0);
-            if (botonPegar == null) {
-                botonPegar = buscarPorTexto(raiz, "Paste", 0);
-            }
-            if (botonPegar == null) {
-                pruebaEstado = "Menú apareció pero no encontré 'Pegar'. Volcado parcial:\n"
-                        + volcarMenu(raiz);
+                // 4. Verificar: buscar el botón de enviar en el árbol
+                handler.postDelayed(() -> verificarYBuscarEnviar(cajas, root), 500);
+            } catch (Exception e) {
+                pruebaEstado = "Excepción en paste: " + e;
                 for (AccessibilityNodeInfo n : cajas) recycleNode(n);
                 recycleNode(root);
-                recycleNode(raiz);
+            }
+        }, 400);
+    }
+
+    private void verificarYBuscarEnviar(List<AccessibilityNodeInfo> cajas, AccessibilityNodeInfo root) {
+        try {
+            AccessibilityNodeInfo raizAhora = getRootInActiveWindow();
+            if (raizAhora == null) {
+                pruebaEstado = "No hay ventana activa para verificar.";
+                for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+                recycleNode(root);
                 return;
             }
 
-            AccessibilityNodeInfo clickable = buscarPadreClickable(botonPegar);
-            boolean ok = (clickable != null ? clickable : botonPegar)
-                    .performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            // Volver a leer la caja refrescada
+            List<AccessibilityNodeInfo> cajasAhora =
+                    raizAhora.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/et_input_msg");
+            String textoCaja = "null";
+            if (cajasAhora != null && !cajasAhora.isEmpty()) {
+                CharSequence t = cajasAhora.get(0).getText();
+                textoCaja = t == null ? "null" : "\"" + t.toString() + "\"";
+                for (AccessibilityNodeInfo n : cajasAhora) recycleNode(n);
+            }
 
-            String textoFinal = leerTexto(cajas.get(0));
-            pruebaEstado = "Long-press OK, Pegar clickeado=" + ok + ". Texto final: " + textoFinal;
+            // Buscar el panel de chat y volcarlo para detectar el botón de enviar
+            List<AccessibilityNodeInfo> paneles =
+                    raizAhora.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/ll_chat_panel");
+            StringBuilder sb = new StringBuilder();
+            if (paneles != null && !paneles.isEmpty()) {
+                volcar(paneles.get(0), 0, sb);
+                for (AccessibilityNodeInfo n : paneles) recycleNode(n);
+            } else {
+                sb.append("(ll_chat_panel no encontrado)");
+            }
 
-            if (clickable != null && clickable != botonPegar) recycleNode(clickable);
-            recycleNode(botonPegar);
+            pruebaEstado = "Click+paste OK. Texto caja ahora: " + textoCaja
+                    + "\n--- PANEL DE CHAT ---\n" + sb;
 
             for (AccessibilityNodeInfo n : cajas) recycleNode(n);
             recycleNode(root);
-            recycleNode(raiz);
+            recycleNode(raizAhora);
 
             handler.removeCallbacks(leer);
             handler.postDelayed(leer, 1500);
         } catch (Exception e) {
-            pruebaEstado = "Excepción en pulsarPegar: " + e;
+            pruebaEstado = "Excepción verificando: " + e;
             for (AccessibilityNodeInfo n : cajas) recycleNode(n);
             recycleNode(root);
-            recycleNode(raiz);
         }
-    }
-
-    private AccessibilityNodeInfo buscarPorTexto(AccessibilityNodeInfo n, String buscado, int depth) {
-        if (n == null || depth > 30) return null;
-        CharSequence t = n.getText();
-        CharSequence d = n.getContentDescription();
-        if ((t != null && t.toString().equalsIgnoreCase(buscado))
-                || (d != null && d.toString().equalsIgnoreCase(buscado))) {
-            return n;
-        }
-        for (int i = 0; i < n.getChildCount(); i++) {
-            AccessibilityNodeInfo child = null;
-            try {
-                child = n.getChild(i);
-                AccessibilityNodeInfo found = buscarPorTexto(child, buscado, depth + 1);
-                if (found != null) {
-                    if (found != child) recycleNode(child);
-                    return found;
-                }
-            } finally {
-                if (child != null) {
-                    // Solo reciclar si no se devolvió
-                }
-            }
-        }
-        return null;
-    }
-
-    private AccessibilityNodeInfo buscarPadreClickable(AccessibilityNodeInfo n) {
-        AccessibilityNodeInfo cur = n;
-        int limit = 5;
-        while (cur != null && limit-- > 0) {
-            if (cur.isClickable()) return cur;
-            AccessibilityNodeInfo p = cur.getParent();
-            if (cur != n) recycleNode(cur);
-            cur = p;
-        }
-        return null;
-    }
-
-    private String volcarMenu(AccessibilityNodeInfo n) {
-        StringBuilder sb = new StringBuilder();
-        volcar(n, 0, sb);
-        if (sb.length() > 2000) return sb.substring(0, 2000) + "...";
-        return sb.toString();
-    }
-
-    private static String leerTexto(AccessibilityNodeInfo n) {
-        if (n == null) return "null";
-        CharSequence t = n.getText();
-        return t == null ? "null" : "\"" + t.toString() + "\"";
     }
 
     // ---------- Utilidades ----------
