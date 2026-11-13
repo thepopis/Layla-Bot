@@ -18,21 +18,51 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ---- CACHÉ DEL KEYSTORE DE DEBUG ----
+      # Esto hace que el keystore se genere UNA vez y se reutilice en cada build.
+      # Así las firmas coinciden y las actualizaciones se instalan sin desinstalar.
+      - name: Cache Debug Keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-layla-bot-v1
+          restore-keys: |
+            debug-keystore-layla-bot-
+
+      # ---- ASEGURAR QUE EL KEYSTORE EXISTE ----
+      - name: Ensure Debug Keystore Exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            echo "Generando keystore nuevo (primera vez)..."
+            keytool -genkey -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          else
+            echo "Keystore encontrado en caché, reutilizando."
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.5
 
-      - name: Diagnostico
+      - name: Generate Gradle Wrapper
         run: |
-          ls -la
-          echo "---- settings.gradle ----"
-          cat settings.gradle
-          echo "---- carpeta app ----"
-          ls -la app
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version 8.5
+          fi
+          chmod +x gradlew
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
