@@ -3,22 +3,62 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="24dp">
+    android:padding="16dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Layla Bot Activo"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp"/>
+        android:textSize="20sp"
+        android:textStyle="bold"/>
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Configura los permisos de accesibilidad para comenzar a automatizar."
-        android:textAlignment="center"
-        android:textSize="14sp"/>
+        android:text="Abre Layla, entra a un chat, vuelve aquí y toca Actualizar."
+        android:layout_marginTop="8dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp">
+
+        <Button
+            android:id="@+id/btn_actualizar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Actualizar"/>
+
+        <Button
+            android:id="@+id/btn_copiar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Copiar"/>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btn_ajustes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Abrir ajustes de accesibilidad"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="12dp">
+
+        <TextView
+            android:id="@+id/salida"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:typeface="monospace"
+            android:textIsSelectable="true"/>
+    </ScrollView>
 
 </LinearLayout>
