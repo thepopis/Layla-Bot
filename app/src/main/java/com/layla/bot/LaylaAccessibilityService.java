@@ -17,6 +17,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String lastPkg = "";
+    private int contador = 0;
 
     private final Runnable leer = new Runnable() {
         @Override
@@ -25,8 +26,13 @@ public class LaylaAccessibilityService extends AccessibilityService {
             if (root == null) return;
             try {
                 StringBuilder sb = new StringBuilder();
-                sb.append("APP: ").append(lastPkg).append("\n");
+                String pkg = root.getPackageName() != null
+                        ? root.getPackageName().toString()
+                        : "desconocido";
+                sb.append("APP: ").append(pkg).append("\n");
+                contador = 0;
                 dump(root, 0, sb);
+                sb.append("\n--- Nodos visitados: ").append(contador).append(" ---\n");
                 lastDump = sb.toString();
             } catch (Exception e) {
                 Log.e(TAG, "Error al leer pantalla", e);
@@ -77,16 +83,18 @@ public class LaylaAccessibilityService extends AccessibilityService {
     }
 
     private void dump(AccessibilityNodeInfo n, int depth, StringBuilder sb) {
-        if (n == null || sb.length() > 8000) return;
+        if (n == null || sb.length() > 20000) return;
 
         try {
-            if (n.isVisibleToUser()) {
+            contador++;
+            // Modo debug: mostrar todos los nodos, incluso los no visibles
+            if (true || n.isVisibleToUser()) {
                 CharSequence text = n.getText();
                 CharSequence desc = n.getContentDescription();
                 String id = n.getViewIdResourceName();
 
-                if (text != null || desc != null || n.isClickable() || n.isEditable()) {
-                    for (int i = 0; i < depth && i < 6; i++) sb.append(" ");
+                if (text != null || desc != null || n.isClickable() || n.isEditable() || id != null) {
+                    for (int i = 0; i < depth && i < 8; i++) sb.append(" ");
                     String cls = n.getClassName() == null ? "" : n.getClassName().toString();
                     sb.append(cls.substring(cls.lastIndexOf('.') + 1));
                     if (id != null) {
