@@ -18,12 +18,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # NO pedimos paquetes específicos para evitar el prompt interactivo.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
-      # ---- CACHÉ DEL KEYSTORE DE DEBUG ----
-      # Esto hace que el keystore se genere UNA vez y se reutilice en cada build.
-      # Así las firmas coinciden y las actualizaciones se instalan sin desinstalar.
+      # Aceptamos licencias de forma NO interactiva con 'yes |'.
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      # ---- CACHÉ DEL KEYSTORE (para que las actualizaciones se instalen sin desinstalar) ----
       - name: Cache Debug Keystore
         uses: actions/cache@v4
         with:
@@ -32,7 +38,6 @@ jobs:
           restore-keys: |
             debug-keystore-layla-bot-
 
-      # ---- ASEGURAR QUE EL KEYSTORE EXISTE ----
       - name: Ensure Debug Keystore Exists
         run: |
           mkdir -p ~/.android
