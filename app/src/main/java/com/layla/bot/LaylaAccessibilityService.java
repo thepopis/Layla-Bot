@@ -146,7 +146,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    // ---------- Prueba de escritura ----------
+    // ---------- Prueba de escritura (4 alternativas) ----------
 
     private void escribirPrueba(String texto) {
         final AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -172,61 +172,77 @@ public class LaylaAccessibilityService extends AccessibilityService {
             return;
         }
 
-        // Paso 1: click sobre la caja para que Layla abra el teclado y le dé foco real
-        boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-        pruebaEstado = "Click enviado (" + click + "). Esperando 500ms para que abra el teclado...";
-
-        // Paso 2: esperar y luego intentar escribir
-        handler.postDelayed(() -> {
-            try {
-                escribirDespuesDeClick(caja, click, texto);
-            } finally {
-                for (AccessibilityNodeInfo n : cajas) recycleNode(n);
-                recycleNode(root);
-            }
-        }, 500);
-    }
-
-    private void escribirDespuesDeClick(AccessibilityNodeInfo caja, boolean clickOk, String texto) {
-        StringBuilder diag = new StringBuilder();
-        diag.append("click=").append(clickOk);
-
-        // Focus explícito
-        boolean focus = caja.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-        diag.append(" focus=").append(focus);
-
-        // Accessibility focus
-        boolean af = caja.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
-        diag.append(" af=").append(af);
-
-        // SetText directo
-        Bundle args = new Bundle();
-        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
-        boolean setText = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
-        diag.append(" setText=").append(setText);
-
-        CharSequence actual = caja.getText();
-        String textoActual = actual == null ? "null" : actual.toString();
-        diag.append(" actual=\"").append(textoActual).append("\"");
-
-        // Fallback: si setText falló o no quedó el texto, probar con portapapeles + pegar
-        if (!setText || !textoActual.contains("prueba")) {
-            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-            if (cm != null) {
-                ClipData clip = ClipData.newPlainText("layla", texto);
-                cm.setPrimaryClip(clip);
-                boolean paste = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
-                diag.append(" paste=").append(paste);
-
-                CharSequence despues = caja.getText();
-                diag.append(" trasPaste=\"")
-                    .append(despues == null ? "null" : despues)
-                    .append("\"");
-            }
+        // Primero cargar el portapapeles ANTES de cualquier acción
+        ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (cm != null) {
+            cm.setPrimaryClip(ClipData.newPlainText("layla", texto));
         }
 
-        pruebaEstado = diag.toString();
+        // Probar todas las alternativas en secuencia, la que funcione primero gana
+        StringBuilder diag = new StringBuilder();
 
+        // --- Alternativa 1: SET_TEXT sin click previo, con selección completa ---
+        Bundle args1 = new Bundle();
+        args1.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
+        args1.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
+        args1.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, texto.length());
+        boolean a1 = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args1);
+        String t1 = leerTexto(caja);
+        diag.append("A1_setText=").append(a1).append("/").append(t1);
+        if (t1 != null && t1.contains("prueba")) {
+            pruebaEstado = diag.toString();
+            finalizarPrueba(cajas, root);
+            return;
+        }
+
+        // --- Alternativa 2: click + SET_TEXT ---
+        boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        Bundle args2 = new Bundle();
+        args2.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
+        boolean a2 = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args2);
+        String t2 = leerTexto(caja);
+        diag.append(" A2_click=").append(click).append(" setText=").append(a2)
+            .append("/").append(t2);
+        if (t2 != null && t2.contains("prueba")) {
+            pruebaEstado = diag.toString();
+            finalizarPrueba(cajas, root);
+            return;
+        }
+
+        // --- Alternativa 3: click + PASTE ---
+        boolean a3 = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+        String t3 = leerTexto(caja);
+        diag.append(" A3_paste=").append(a3).append("/").append(t3);
+        if (t3 != null && t3.contains("prueba")) {
+            pruebaEstado = diag.toString();
+            finalizarPrueba(cajas, root);
+            return;
+        }
+
+        // --- Alternativa 4: SET_TEXT en el padre (ll_input_msg) ---
+        AccessibilityNodeInfo padre = caja.getParent();
+        if (padre != null) {
+            Bundle args4 = new Bundle();
+            args4.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
+            boolean a4 = padre.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args4);
+            String t4 = leerTexto(caja);
+            diag.append(" A4_padre=").append(a4).append("/").append(t4);
+            recycleNode(padre);
+        }
+
+        pruebaEstado = "NINGUNA FUNCIONÓ. " + diag.toString();
+        finalizarPrueba(cajas, root);
+    }
+
+    private static String leerTexto(AccessibilityNodeInfo n) {
+        if (n == null) return "null";
+        CharSequence t = n.getText();
+        return t == null ? "null" : "\"" + t.toString() + "\"";
+    }
+
+    private void finalizarPrueba(List<AccessibilityNodeInfo> cajas, AccessibilityNodeInfo root) {
+        for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+        recycleNode(root);
         handler.removeCallbacks(leer);
         handler.postDelayed(leer, 1500);
     }
