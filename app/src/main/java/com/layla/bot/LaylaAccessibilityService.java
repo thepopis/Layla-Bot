@@ -2,51 +2,34 @@ package com.layla.bot;
 
 import android.accessibilityservice.AccessibilityService;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
-public class LaylaAccessibilityService extends AccessibilityService {
-    private static final String TAG = "LaylaBotService";
+import java.util.List;
 
-    public static volatile String lastDump = "Aún no se ha leído ninguna pantalla.";
+public class LaylaAccessibilityService extends AccessibilityService {
+    private static final String TAG = "LaylaBot";
+    private static final String LAYLA_PKG = "com.layla.chat";
+
+    private static volatile String estado = "Aún no se ha leído ninguna pantalla.";
+    private static volatile String pruebaEstado = "(sin probar)";
+    private static volatile String ultimoEntrante = "(ninguno)";
+    private static volatile String conversacion = "";
+    private static volatile String pantalla = "";
 
     private static LaylaAccessibilityService instance;
-
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private String lastPkg = "";
-    private int contador = 0;
-
-    private final Runnable leer = new Runnable() {
-        @Override
-        public void run() {
-            AccessibilityNodeInfo root = getRootInActiveWindow();
-            if (root == null) return;
-            try {
-                StringBuilder sb = new StringBuilder();
-                String pkg = root.getPackageName() != null
-                        ? root.getPackageName().toString()
-                        : "desconocido";
-                sb.append("APP: ").append(pkg).append("\n");
-                contador = 0;
-                dump(root, 0, sb);
-                sb.append("\n--- Nodos visitados: ").append(contador).append(" ---\n");
-                lastDump = sb.toString();
-            } catch (Exception e) {
-                Log.e(TAG, "Error al leer pantalla", e);
-            } finally {
-                recycleNode(root);
-            }
-        }
-    };
+    private final Runnable leer = () -> leerPantalla();
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
-        Log.d(TAG, "Servicio conectado");
+        estado = "Servicio conectado. Abre un chat en Layla.";
     }
 
     @Override
@@ -55,71 +38,225 @@ public class LaylaAccessibilityService extends AccessibilityService {
         instance = null;
     }
 
-    public static void requestRefresh() {
-        if (instance != null) {
-            instance.handler.removeCallbacks(instance.leer);
-            instance.handler.post(instance.leer);
-        } else {
-            lastDump = "⚠️ El servicio de accesibilidad no está activo. Actívalo en Ajustes.";
-        }
-    }
-
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || event.getPackageName() == null) return;
-
-        int type = event.getEventType();
-        if (type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                && type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            return;
-        }
-
-        String pkg = event.getPackageName().toString();
-        if (pkg.equals(getPackageName()) || pkg.equals("com.android.systemui")) return;
-
-        lastPkg = pkg;
+        if (!LAYLA_PKG.equals(event.getPackageName().toString())) return;
         handler.removeCallbacks(leer);
         handler.postDelayed(leer, 800);
     }
 
-    private void dump(AccessibilityNodeInfo n, int depth, StringBuilder sb) {
-        if (n == null || sb.length() > 20000) return;
+    @Override
+    public void onInterrupt() {
+    }
 
+    // ---------- Lo que usa la pantalla de la app ----------
+
+    public static String informe() {
+        String aviso = (instance == null)
+                ? "⚠️ El servicio de accesibilidad no está activo. Actívalo en Ajustes.\n\n"
+                : "";
+        return aviso
+                + "ESTADO: " + estado
+                + "\nPRUEBA DE ESCRITURA: " + pruebaEstado
+                + "\n\nÚLTIMO MENSAJE ENTRANTE:\n" + ultimoEntrante
+                + "\n\nCONVERSACIÓN VISIBLE:\n" + conversacion
+                + "\n--- PANTALLA ---\n" + pantalla;
+    }
+
+    public static void programarPruebaEscritura() {
+        final LaylaAccessibilityService s = instance;
+        if (s == null) {
+            pruebaEstado = "⚠️ El servicio no está activo.";
+            return;
+        }
+        pruebaEstado = "Esperando 6 segundos... ve a Layla y abre un chat.";
+        s.handler.postDelayed(() -> s.escribirPrueba("prueba del bot"), 6000);
+    }
+
+    // ---------- Lectura del chat ----------
+
+    private void leerPantalla() {
+        AccessibilityNodeInfo root = null;
         try {
-            contador++;
-            // Modo debug: mostrar todos los nodos, incluso los no visibles
-            if (true || n.isVisibleToUser()) {
-                CharSequence text = n.getText();
-                CharSequence desc = n.getContentDescription();
-                String id = n.getViewIdResourceName();
+            root = getRootInActiveWindow();
+            if (root == null) return;
+            if (!LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) return;
 
-                if (text != null || desc != null || n.isClickable() || n.isEditable() || id != null) {
-                    for (int i = 0; i < depth && i < 8; i++) sb.append(" ");
-                    String cls = n.getClassName() == null ? "" : n.getClassName().toString();
-                    sb.append(cls.substring(cls.lastIndexOf('.') + 1));
-                    if (id != null) {
-                        int slash = id.indexOf('/');
-                        sb.append(" id=").append(slash >= 0 ? id.substring(slash + 1) : id);
-                    }
-                    if (text != null) sb.append(" texto=\"").append(text).append("\"");
-                    if (desc != null) sb.append(" desc=\"").append(desc).append("\"");
-                    if (n.isClickable()) sb.append(" [clic]");
-                    if (n.isEditable()) sb.append(" [editable]");
-                    sb.append("\n");
-                }
-            }
-
-            for (int i = 0; i < n.getChildCount(); i++) {
-                AccessibilityNodeInfo child = null;
-                try {
-                    child = n.getChild(i);
-                    dump(child, depth + 1, sb);
-                } finally {
-                    recycleNode(child);
-                }
-            }
+            StringBuilder sb = new StringBuilder();
+            volcar(root, 0, sb);
+            pantalla = sb.toString();
+            analizarChat(root);
         } catch (Exception e) {
-            Log.e(TAG, "Error en dump", e);
+            Log.e(TAG, "Error al leer", e);
+            estado = "Error al leer: " + e;
+        } finally {
+            recycleNode(root);
+        }
+    }
+
+    private void analizarChat(AccessibilityNodeInfo root) {
+        List<AccessibilityNodeInfo> listas =
+                root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/rvChattingList");
+        if (listas == null || listas.isEmpty()) {
+            estado = "Estás en Layla, pero no veo una conversación abierta.";
+            return;
+        }
+
+        AccessibilityNodeInfo lista = listas.get(0);
+        try {
+            StringBuilder sb = new StringBuilder();
+            String ultimoTexto = null;
+            String ultimoQuien = "";
+
+            for (int i = 0; i < lista.getChildCount(); i++) {
+                AccessibilityNodeInfo fila = null;
+                try {
+                    fila = lista.getChild(i);
+                    if (fila == null) continue;
+                    String texto = textoDe(fila, "tv_content");
+                    if (texto == null || texto.trim().isEmpty()) continue;
+
+                    String quien;
+                    if (tiene(fila, "iv_read_status")) quien = "YO";
+                    else if (tiene(fila, "iv_translate")) quien = "ELLOS";
+                    else quien = "?";
+
+                    ultimoTexto = texto.trim();
+                    ultimoQuien = quien;
+                    sb.append(quien).append(": ").append(ultimoTexto).append("\n");
+                } finally {
+                    recycleNode(fila);
+                }
+            }
+
+            conversacion = sb.toString();
+            if (ultimoTexto == null) {
+                estado = "Veo el chat, pero sin mensajes de texto.";
+                return;
+            }
+            estado = "El último mensaje visible es de: " + ultimoQuien;
+            ultimoEntrante = ultimoQuien.equals("ELLOS")
+                    ? ultimoTexto
+                    : "(el último mensaje no es del otro, no hay nada que responder)";
+        } finally {
+            for (AccessibilityNodeInfo nodo : listas) recycleNode(nodo);
+        }
+    }
+
+    // ---------- Prueba de escritura ----------
+
+    private void escribirPrueba(String texto) {
+        AccessibilityNodeInfo root = null;
+        try {
+            root = getRootInActiveWindow();
+            if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
+                pruebaEstado = "Falló: a los 6 segundos no estabas en Layla.";
+                return;
+            }
+
+            List<AccessibilityNodeInfo> cajas =
+                    root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/et_input_msg");
+            if (cajas == null || cajas.isEmpty()) {
+                pruebaEstado = "Falló: no encuentro la caja de texto (abre un chat).";
+                return;
+            }
+
+            AccessibilityNodeInfo caja = cajas.get(0);
+            try {
+                if (!caja.isEditable()) {
+                    pruebaEstado = "Falló: el nodo encontrado no es editable.";
+                    return;
+                }
+
+                caja.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                Bundle args = new Bundle();
+                args.putCharSequence(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        texto
+                );
+                boolean ok = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+                pruebaEstado = ok
+                        ? "OK: texto escrito en la caja (no se envió)."
+                        : "Falló: Layla no dejó escribir en la caja.";
+            } finally {
+                for (AccessibilityNodeInfo nodo : cajas) recycleNode(nodo);
+            }
+
+            handler.removeCallbacks(leer);
+            handler.postDelayed(leer, 1500);
+        } finally {
+            recycleNode(root);
+        }
+    }
+
+    // ---------- Utilidades ----------
+
+    private static boolean esId(AccessibilityNodeInfo n, String corto) {
+        String id = n.getViewIdResourceName();
+        return id != null && id.endsWith("/" + corto);
+    }
+
+    private static boolean tiene(AccessibilityNodeInfo n, String corto) {
+        if (n == null) return false;
+        if (esId(n, corto)) return true;
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = n.getChild(i);
+                if (tiene(child, corto)) return true;
+            } finally {
+                recycleNode(child);
+            }
+        }
+        return false;
+    }
+
+    private static String textoDe(AccessibilityNodeInfo n, String corto) {
+        if (n == null) return null;
+        if (esId(n, corto) && n.getText() != null) return n.getText().toString();
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = n.getChild(i);
+                String t = textoDe(child, corto);
+                if (t != null) return t;
+            } finally {
+                recycleNode(child);
+            }
+        }
+        return null;
+    }
+
+    private void volcar(AccessibilityNodeInfo n, int nivel, StringBuilder sb) {
+        if (n == null || sb.length() > 20000) return;
+        CharSequence texto = n.getText();
+        CharSequence desc = n.getContentDescription();
+        String id = n.getViewIdResourceName();
+
+        if (texto != null || desc != null || id != null || n.isClickable() || n.isEditable()) {
+            for (int i = 0; i < nivel && i < 6; i++) sb.append(" ");
+            String cls = n.getClassName() == null ? "" : n.getClassName().toString();
+            sb.append(cls.substring(cls.lastIndexOf('.') + 1));
+            if (id != null) {
+                int s = id.indexOf('/');
+                sb.append(" id=").append(s >= 0 ? id.substring(s + 1) : id);
+            }
+            if (texto != null) sb.append(" texto=\"").append(texto).append("\"");
+            if (desc != null) sb.append(" desc=\"").append(desc).append("\"");
+            if (n.isClickable()) sb.append(" [clic]");
+            if (n.isEditable()) sb.append(" [editable]");
+            sb.append("\n");
+        }
+
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = n.getChild(i);
+                volcar(child, nivel + 1, sb);
+            } finally {
+                recycleNode(child);
+            }
         }
     }
 
@@ -128,9 +265,5 @@ public class LaylaAccessibilityService extends AccessibilityService {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             try { node.recycle(); } catch (Exception ignored) {}
         }
-    }
-
-    @Override
-    public void onInterrupt() {
     }
 }
