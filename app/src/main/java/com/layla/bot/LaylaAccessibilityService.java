@@ -1,6 +1,8 @@
 package com.layla.bot;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -147,47 +149,86 @@ public class LaylaAccessibilityService extends AccessibilityService {
     // ---------- Prueba de escritura ----------
 
     private void escribirPrueba(String texto) {
-        AccessibilityNodeInfo root = null;
-        try {
-            root = getRootInActiveWindow();
-            if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
-                pruebaEstado = "Falló: a los 6 segundos no estabas en Layla.";
-                return;
-            }
-
-            List<AccessibilityNodeInfo> cajas =
-                    root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/et_input_msg");
-            if (cajas == null || cajas.isEmpty()) {
-                pruebaEstado = "Falló: no encuentro la caja de texto (abre un chat).";
-                return;
-            }
-
-            AccessibilityNodeInfo caja = cajas.get(0);
-            try {
-                if (!caja.isEditable()) {
-                    pruebaEstado = "Falló: el nodo encontrado no es editable.";
-                    return;
-                }
-
-                caja.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-                Bundle args = new Bundle();
-                args.putCharSequence(
-                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                        texto
-                );
-                boolean ok = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
-                pruebaEstado = ok
-                        ? "OK: texto escrito en la caja (no se envió)."
-                        : "Falló: Layla no dejó escribir en la caja.";
-            } finally {
-                for (AccessibilityNodeInfo nodo : cajas) recycleNode(nodo);
-            }
-
-            handler.removeCallbacks(leer);
-            handler.postDelayed(leer, 1500);
-        } finally {
+        final AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || !LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
+            pruebaEstado = "Falló: a los 6 segundos no estabas en Layla.";
             recycleNode(root);
+            return;
         }
+
+        final List<AccessibilityNodeInfo> cajas =
+                root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/et_input_msg");
+        if (cajas == null || cajas.isEmpty()) {
+            pruebaEstado = "Falló: no encuentro la caja de texto (abre un chat).";
+            recycleNode(root);
+            return;
+        }
+
+        final AccessibilityNodeInfo caja = cajas.get(0);
+        if (!caja.isEditable()) {
+            pruebaEstado = "Falló: el nodo encontrado no es editable.";
+            for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+            recycleNode(root);
+            return;
+        }
+
+        // Paso 1: click sobre la caja para que Layla abra el teclado y le dé foco real
+        boolean click = caja.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        pruebaEstado = "Click enviado (" + click + "). Esperando 500ms para que abra el teclado...";
+
+        // Paso 2: esperar y luego intentar escribir
+        handler.postDelayed(() -> {
+            try {
+                escribirDespuesDeClick(caja, click, texto);
+            } finally {
+                for (AccessibilityNodeInfo n : cajas) recycleNode(n);
+                recycleNode(root);
+            }
+        }, 500);
+    }
+
+    private void escribirDespuesDeClick(AccessibilityNodeInfo caja, boolean clickOk, String texto) {
+        StringBuilder diag = new StringBuilder();
+        diag.append("click=").append(clickOk);
+
+        // Focus explícito
+        boolean focus = caja.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+        diag.append(" focus=").append(focus);
+
+        // Accessibility focus
+        boolean af = caja.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
+        diag.append(" af=").append(af);
+
+        // SetText directo
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, texto);
+        boolean setText = caja.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        diag.append(" setText=").append(setText);
+
+        CharSequence actual = caja.getText();
+        String textoActual = actual == null ? "null" : actual.toString();
+        diag.append(" actual=\"").append(textoActual).append("\"");
+
+        // Fallback: si setText falló o no quedó el texto, probar con portapapeles + pegar
+        if (!setText || !textoActual.contains("prueba")) {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm != null) {
+                ClipData clip = ClipData.newPlainText("layla", texto);
+                cm.setPrimaryClip(clip);
+                boolean paste = caja.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+                diag.append(" paste=").append(paste);
+
+                CharSequence despues = caja.getText();
+                diag.append(" trasPaste=\"")
+                    .append(despues == null ? "null" : despues)
+                    .append("\"");
+            }
+        }
+
+        pruebaEstado = diag.toString();
+
+        handler.removeCallbacks(leer);
+        handler.postDelayed(leer, 1500);
     }
 
     // ---------- Utilidades ----------
