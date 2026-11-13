@@ -5,6 +5,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,73 +21,27 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Instalar Gradle 8.5 y ponerlo en el PATH
-      - name: Setup Gradle 8.5
+      - name: Crear llave de firma (solo la primera vez)
+        run: |
+          if [ ! -f app/debug.keystore ]; then
+            keytool -genkeypair -v -keystore app/debug.keystore \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 36500 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git add app/debug.keystore
+            git commit -m "Agregar llave de firma de debug"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.5
 
-      # Aceptar licencias del SDK sin prompt interactivo
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
-
-      # Generar el wrapper si no existe (apuntando a 8.5)
-      - name: Generate Gradle Wrapper (8.5)
-        run: |
-          if [ ! -f "gradlew" ]; then
-            gradle wrapper --gradle-version 8.5
-          fi
-          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.5-all.zip|' gradle/wrapper/gradle-wrapper.properties
-          chmod +x gradlew
-
-      # ---- CACHÉ DEL KEYSTORE ----
-      # Se guarda SOLO si existe; si nunca se ha guardado, se genera uno y se sube.
-      - name: Restore Debug Keystore
-        uses: actions/cache/restore@v4
-        id: keystore-cache
-        with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-layla-bot-v2
-
-      - name: Ensure Debug Keystore Exists
-        run: |
-          mkdir -p ~/.android
-          if [ ! -f ~/.android/debug.keystore ]; then
-            echo "Generando keystore nuevo..."
-            keytool -genkey -v \
-              -keystore ~/.android/debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-          else
-            echo "Keystore restaurado correctamente."
-          fi
-          # Mostrar el fingerprint para verificar que es el mismo entre builds
-          echo "=== Fingerprint del keystore ==="
-          keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA1|SHA256" || true
-
-      # ---- VERSIONCODE AUTOMÁTICO ----
-      # Usa el timestamp Unix como versionCode, siempre creciente
-      - name: Bump versionCode
-        run: |
-          VERSION_CODE=$(date +%s)
-          echo "versionCode = $VERSION_CODE"
-          sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" app/build.gradle
-          grep versionCode app/build.gradle
-
-      # ---- COMPILAR ----
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
-
-      # ---- GUARDAR EL KEYSTORE (solo si se generó) ----
-      - name: Save Debug Keystore
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-layla-bot-v2
+        run: gradle assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
