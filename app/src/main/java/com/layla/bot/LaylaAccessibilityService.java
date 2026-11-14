@@ -71,6 +71,24 @@ public class LaylaAccessibilityService extends AccessibilityService {
                 Config.DELAY_PRUEBA_MS);
     }
 
+    public static void programarPruebaSiguiente() {
+        final LaylaAccessibilityService s = instance;
+        if (s == null) {
+            STATE.setPruebaEstado("⚠️ El servicio no está activo.");
+            return;
+        }
+        STATE.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
+                + " segundos... ve a Layla y abre un chat.");
+        s.handler.postDelayed(() -> s.pulsarSiguiente(), Config.DELAY_PRUEBA_MS);
+    }
+
+    private void pulsarSiguiente() {
+        boolean ok = chatWriter.pulsarBoton(ChatWriter.ID_SIGUIENTE);
+        STATE.setPruebaEstado(ok
+                ? "✅ Pulsé el botón de siguiente chat."
+                : "⚠️ No encontré o no pude pulsar el botón de siguiente chat.");
+    }
+
     private void leerPantalla() {
         AccessibilityNodeInfo root = null;
         try {
