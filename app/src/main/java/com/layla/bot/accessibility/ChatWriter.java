@@ -15,9 +15,6 @@ public class ChatWriter {
 
     private static final String LAYLA_PKG = "com.layla.chat";
 
-    // ID del botón "siguiente chat" en Layla. Es una suposición: hay que confirmarla.
-    public static final String ID_SIGUIENTE = "iv_next";
-
     public interface Callback {
         void onResultado(String mensaje);
     }
@@ -72,17 +69,69 @@ public class ChatWriter {
         }, Config.DELAY_CLICK_A_PASTE_MS);
     }
 
-    private boolean pulsarEnviar() {
-        return pulsarBoton("iv_send");
+    /** Pulsa el botón "siguiente chat" (ll_next_unread). */
+    public void pulsarSiguienteChat(Callback cb) {
+        AccessibilityNodeInfo raiz = service.getRootInActiveWindow();
+        if (raiz == null) {
+            cb.onResultado("Falló: no hay ventana activa.");
+            return;
+        }
+
+        try {
+            List<AccessibilityNodeInfo> botones =
+                    raiz.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/ll_next_unread");
+            if (botones == null || botones.isEmpty()) {
+                cb.onResultado("Falló: no encuentro ll_next_unread (¿no hay chats pendientes?).");
+                return;
+            }
+
+            AccessibilityNodeInfo boton = botones.get(0);
+            try {
+                if (boton.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    cb.onResultado("OK: siguiente chat pulsado (click directo).");
+                    return;
+                }
+
+                AccessibilityNodeInfo padre = boton.getParent();
+                if (padre != null) {
+                    boolean ok = padre.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                    NodeUtils.recycle(padre);
+                    if (ok) {
+                        cb.onResultado("OK: siguiente chat pulsado (click en padre).");
+                        return;
+                    }
+                }
+
+                Rect rect = new Rect();
+                boton.getBoundsInScreen(rect);
+                if (rect.width() <= 0 || rect.height() <= 0) {
+                    cb.onResultado("Falló: bounds de ll_next_unread inválidos.");
+                    return;
+                }
+
+                Path path = new Path();
+                path.moveTo(rect.centerX(), rect.centerY());
+                GestureDescription.StrokeDescription stroke =
+                        new GestureDescription.StrokeDescription(path, 0L, 100L);
+                GestureDescription gesture = new GestureDescription.Builder()
+                        .addStroke(stroke).build();
+                boolean ok = service.dispatchGesture(gesture, null, null);
+                cb.onResultado("OK: siguiente chat pulsado (tap gestual=" + ok + ").");
+            } finally {
+                NodeUtils.recycleAll(botones);
+            }
+        } finally {
+            NodeUtils.recycle(raiz);
+        }
     }
 
-    public boolean pulsarBoton(String idCorto) {
+    private boolean pulsarEnviar() {
         AccessibilityNodeInfo raiz = service.getRootInActiveWindow();
         if (raiz == null) return false;
 
         try {
             List<AccessibilityNodeInfo> botones =
-                    raiz.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/" + idCorto);
+                    raiz.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/iv_send");
             if (botones == null || botones.isEmpty()) return false;
 
             AccessibilityNodeInfo boton = botones.get(0);
