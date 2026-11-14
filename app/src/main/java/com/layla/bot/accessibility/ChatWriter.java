@@ -15,6 +15,9 @@ public class ChatWriter {
 
     private static final String LAYLA_PKG = "com.layla.chat";
 
+    // ID del botón "siguiente chat" en Layla. Es una suposición: hay que confirmarla.
+    public static final String ID_SIGUIENTE = "iv_next";
+
     public interface Callback {
         void onResultado(String mensaje);
     }
@@ -70,12 +73,16 @@ public class ChatWriter {
     }
 
     private boolean pulsarEnviar() {
+        return pulsarBoton("iv_send");
+    }
+
+    public boolean pulsarBoton(String idCorto) {
         AccessibilityNodeInfo raiz = service.getRootInActiveWindow();
         if (raiz == null) return false;
 
         try {
             List<AccessibilityNodeInfo> botones =
-                    raiz.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/iv_send");
+                    raiz.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/" + idCorto);
             if (botones == null || botones.isEmpty()) return false;
 
             AccessibilityNodeInfo boton = botones.get(0);
