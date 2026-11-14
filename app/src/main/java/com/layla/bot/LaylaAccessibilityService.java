@@ -14,6 +14,7 @@ import com.layla.bot.accessibility.NodeUtils;
 import com.layla.bot.domain.ChatParser;
 import com.layla.bot.service.BotState;
 import com.layla.bot.service.LecturaUseCase;
+import com.layla.bot.service.SiguienteChatUseCase;
 
 public class LaylaAccessibilityService extends AccessibilityService {
     private static final String TAG = "LaylaBot";
@@ -26,6 +27,9 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private final ChatWriter chatWriter = new ChatWriter(this, handler);
     private final LecturaUseCase lecturaUseCase =
             new LecturaUseCase(new ChatParser(), STATE);
+    private final SiguienteChatUseCase siguienteChatUseCase =
+            new SiguienteChatUseCase(new ChatParser(), STATE);
+
     private final Runnable leer = () -> leerPantalla();
 
     @Override
@@ -71,7 +75,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
                 Config.DELAY_PRUEBA_MS);
     }
 
-    public static void programarPruebaSiguiente() {
+    public static void programarPruebaSiguienteChat() {
         final LaylaAccessibilityService s = instance;
         if (s == null) {
             STATE.setPruebaEstado("⚠️ El servicio no está activo.");
@@ -79,14 +83,29 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
         STATE.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
-        s.handler.postDelayed(() -> s.pulsarSiguiente(), Config.DELAY_PRUEBA_MS);
-    }
-
-    private void pulsarSiguiente() {
-        boolean ok = chatWriter.pulsarBoton(ChatWriter.ID_SIGUIENTE);
-        STATE.setPruebaEstado(ok
-                ? "✅ Pulsé el botón de siguiente chat."
-                : "⚠️ No encontré o no pude pulsar el botón de siguiente chat.");
+        s.handler.postDelayed(() -> {
+            try {
+                AccessibilityNodeInfo root = s.getRootInActiveWindow();
+                if (root == null) {
+                    STATE.setPruebaEstado("Falló: no hay ventana activa.");
+                    return;
+                }
+                try {
+                    String conversacion = s.chatReader.leerConversacion(root);
+                    boolean debe = s.siguienteChatUseCase.debeSaltar(conversacion);
+                    if (!debe) {
+                        STATE.setPruebaEstado("No salta: el último mensaje no cumple la condición.");
+                        return;
+                    }
+                    s.chatWriter.pulsarSiguienteChat(
+                            resultado -> STATE.setPruebaEstado(resultado));
+                } finally {
+                    NodeUtils.recycle(root);
+                }
+            } catch (Exception e) {
+                STATE.setPruebaEstado("Excepción: " + e);
+            }
+        }, Config.DELAY_PRUEBA_MS);
     }
 
     private void leerPantalla() {
