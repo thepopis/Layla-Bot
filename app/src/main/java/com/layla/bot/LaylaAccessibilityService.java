@@ -20,15 +20,13 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private static final String TAG = "LaylaBot";
 
     private static LaylaAccessibilityService instance;
-    private static final BotState STATE = new BotState();
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ChatReader chatReader = new ChatReader();
-    private final ChatWriter chatWriter = new ChatWriter(this, handler);
-    private final LecturaUseCase lecturaUseCase =
-            new LecturaUseCase(new ChatParser(), STATE);
-    private final SiguienteChatUseCase siguienteChatUseCase =
-            new SiguienteChatUseCase(new ChatParser(), STATE);
+    private ChatReader chatReader;
+    private ChatWriter chatWriter;
+    private BotState state;
+    private LecturaUseCase lecturaUseCase;
+    private SiguienteChatUseCase siguienteChatUseCase;
 
     private final Runnable leer = () -> leerPantalla();
 
@@ -36,13 +34,18 @@ public class LaylaAccessibilityService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
-        STATE.marcarServicioActivo(true);
+        state = new BotState(this);
+        chatReader = new ChatReader();
+        chatWriter = new ChatWriter(this, handler);
+        lecturaUseCase = new LecturaUseCase(new ChatParser(), state);
+        siguienteChatUseCase = new SiguienteChatUseCase(new ChatParser(), state);
+        state.marcarServicioActivo(true);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        STATE.marcarServicioActivo(false);
+        if (state != null) state.marcarServicioActivo(false);
         instance = null;
     }
 
@@ -58,52 +61,47 @@ public class LaylaAccessibilityService extends AccessibilityService {
     public void onInterrupt() {}
 
     public static String informe() {
-        return STATE.informe();
+        if (instance == null || instance.state == null) return "Servicio no conectado aún.";
+        return instance.state.informe();
     }
 
     public static void programarPruebaEscritura() {
         final LaylaAccessibilityService s = instance;
-        if (s == null) {
-            STATE.setPruebaEstado("⚠️ El servicio no está activo.");
-            return;
-        }
-        STATE.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
+        if (s == null || s.state == null) return;
+        s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
         s.handler.postDelayed(
                 () -> s.chatWriter.escribirYEnviar("prueba del bot",
-                        resultado -> STATE.setPruebaEstado(resultado)),
+                        resultado -> s.state.setPruebaEstado(resultado)),
                 Config.DELAY_PRUEBA_MS);
     }
 
     public static void programarPruebaSiguienteChat() {
         final LaylaAccessibilityService s = instance;
-        if (s == null) {
-            STATE.setPruebaEstado("⚠️ El servicio no está activo.");
-            return;
-        }
-        STATE.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
+        if (s == null || s.state == null) return;
+        s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
         s.handler.postDelayed(() -> {
             try {
                 AccessibilityNodeInfo root = s.getRootInActiveWindow();
                 if (root == null) {
-                    STATE.setPruebaEstado("Falló: no hay ventana activa.");
+                    s.state.setPruebaEstado("Falló: no hay ventana activa.");
                     return;
                 }
                 try {
                     String conversacion = s.chatReader.leerConversacion(root);
                     boolean debe = s.siguienteChatUseCase.debeSaltar(conversacion);
                     if (!debe) {
-                        STATE.setPruebaEstado("No salta: el último mensaje no cumple la condición.");
+                        s.state.setPruebaEstado("No salta: el último mensaje no cumple la condición.");
                         return;
                     }
                     s.chatWriter.pulsarSiguienteChat(
-                            resultado -> STATE.setPruebaEstado(resultado));
+                            resultado -> s.state.setPruebaEstado(resultado));
                 } finally {
                     NodeUtils.recycle(root);
                 }
             } catch (Exception e) {
-                STATE.setPruebaEstado("Excepción: " + e);
+                s.state.setPruebaEstado("Excepción: " + e);
             }
         }, Config.DELAY_PRUEBA_MS);
     }
@@ -115,12 +113,12 @@ public class LaylaAccessibilityService extends AccessibilityService {
             if (root == null) return;
             if (!Config.LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) return;
 
-            STATE.setPantalla(chatReader.volcarPantalla(root));
+            state.setPantalla(chatReader.volcarPantalla(root));
             String conversacion = chatReader.leerConversacion(root);
             lecturaUseCase.procesar(conversacion);
         } catch (Exception e) {
             Log.e(TAG, "Error al leer", e);
-            STATE.setEstado("Error al leer: " + e);
+            state.setEstado("Error al leer: " + e);
         } finally {
             NodeUtils.recycle(root);
         }
