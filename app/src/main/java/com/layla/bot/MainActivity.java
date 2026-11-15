@@ -11,13 +11,18 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.layla.bot.service.BotState;
+
 public class MainActivity extends AppCompatActivity {
     private TextView salida;
+    private BotState state;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        state = new BotState(this);
 
         salida = findViewById(R.id.salida);
         Button actualizar = findViewById(R.id.btn_actualizar);
@@ -26,12 +31,12 @@ public class MainActivity extends AppCompatActivity {
         Button prueba = findViewById(R.id.btn_prueba);
         Button siguiente = findViewById(R.id.btn_siguiente);
 
-        actualizar.setOnClickListener(v -> salida.setText(LaylaAccessibilityService.informe()));
+        actualizar.setOnClickListener(v -> salida.setText(state.informe()));
 
         copiar.setOnClickListener(v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null) {
-                cm.setPrimaryClip(ClipData.newPlainText("layla", LaylaAccessibilityService.informe()));
+                cm.setPrimaryClip(ClipData.newPlainText("layla", state.informe()));
                 Toast.makeText(this, "Copiado", Toast.LENGTH_SHORT).show();
             }
         });
@@ -59,6 +64,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        salida.setText(LaylaAccessibilityService.informe());
+        salida.setText(state.informe());
     }
 }
