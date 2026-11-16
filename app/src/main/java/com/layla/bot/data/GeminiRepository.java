@@ -7,6 +7,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
@@ -25,8 +26,10 @@ public class GeminiRepository {
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     private final OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(40, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .callTimeout(120, TimeUnit.SECONDS)
             .build();
 
     public String generarRespuesta(String apiKey, String prompt) throws IOException {
@@ -62,6 +65,8 @@ public class GeminiRepository {
             } catch (JSONException e) {
                 throw new IOException("Respuesta inesperada: " + raw, e);
             }
+        } catch (InterruptedIOException e) {
+            throw new IOException("Sin respuesta de Gemini a tiempo (conexión lenta o modelo ocupado)", e);
         }
     }
 }
