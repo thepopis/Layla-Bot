@@ -18,8 +18,8 @@ import okhttp3.Response;
 public class GeminiRepository {
 
     private static final String TAG = "GeminiRepo";
-    // Si da error 404, cambia el nombre del modelo aquí.
-    private static final String MODELO = "gemini-2.5-flash";
+    // Si Google lo retira otra vez, el error te dirá el nombre nuevo. Cámbialo aquí.
+    private static final String MODELO = "gemini-3.8-flash";
     private static final String URL =
             "https://generativelanguage.googleapis.com/v1beta/models/" + MODELO + ":generateContent";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
