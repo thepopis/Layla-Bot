@@ -8,7 +8,7 @@ public class ChatReader {
 
     private static final String LAYLA_PKG = "com.layla.chat";
 
-    /** Devuelve "YO: ...\nELLOS: ...\n" o null si no hay chat abierto. */
+    /** Devuelve "YO: ...\nEL: ...\n" o null si no hay chat abierto. */
     public String leerConversacion(AccessibilityNodeInfo root) {
         List<AccessibilityNodeInfo> listas =
                 root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/rvChattingList");
@@ -27,7 +27,7 @@ public class ChatReader {
 
                     String quien;
                     if (NodeUtils.tiene(fila, "iv_read_status")) quien = "YO";
-                    else if (NodeUtils.tiene(fila, "iv_translate")) quien = "ELLOS";
+                    else if (NodeUtils.tiene(fila, "iv_translate")) quien = "EL";
                     else quien = "?";
 
                     sb.append(quien).append(": ").append(texto.trim()).append("\n");
@@ -38,6 +38,19 @@ public class ChatReader {
             return sb.toString();
         } finally {
             NodeUtils.recycleAll(listas);
+        }
+    }
+
+    /** Nombre del chico (puede ser vacío si no se encuentra). */
+    public String leerNombreUsuario(AccessibilityNodeInfo root) {
+        List<AccessibilityNodeInfo> nodos =
+                root.findAccessibilityNodeInfosByViewId(LAYLA_PKG + ":id/tv_nickname");
+        if (nodos == null || nodos.isEmpty()) return "";
+        try {
+            CharSequence t = nodos.get(0).getText();
+            return t != null ? t.toString().trim() : "";
+        } finally {
+            NodeUtils.recycleAll(nodos);
         }
     }
 
