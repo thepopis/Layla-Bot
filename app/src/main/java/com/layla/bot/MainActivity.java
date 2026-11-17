@@ -6,8 +6,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -26,11 +27,28 @@ import java.util.Date;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
-    private TextView salida, aviso, tvServicio, tvEstado, tvUltimo,
-            tvResultadoIa, tvIaEstado;
+    private TextView salida;
+    private TextView aviso;
+    private TextView tvServicio;
+    private TextView tvEstado;
+    private TextView tvUltimo;
+    private TextView tvResultadoIa;
+    private TextView tvIaEstado;
     private LinearLayout llChat;
     private BotState state;
     private SharedPreferences prefs;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private String ultimoInforme = null;
+
+    /** Refresca el panel solo, cada 2 segundos, mientras la app está abierta. */
+    private final Runnable refrescar = new Runnable() {
+        @Override
+        public void run() {
+            mostrarInforme(state.informe());
+            handler.postDelayed(this, 2000);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,17 +99,21 @@ public class MainActivity extends AppCompatActivity {
         ajustes.setOnClickListener(abrirAjustes);
         aviso.setOnClickListener(abrirAjustes);
 
-        prueba.setOnClickListener(v -> {
-            LaylaAccessibilityService.programarPruebaEscritura();
-            Toast.makeText(this, "Ve a Layla y abre un chat. Escribo en 6 segundos.",
-                    Toast.LENGTH_LONG).show();
-        });
+        if (prueba != null) {
+            prueba.setOnClickListener(v -> {
+                LaylaAccessibilityService.programarPruebaEscritura();
+                Toast.makeText(this, "Ve a Layla y abre un chat. Escribo en 6 segundos.",
+                        Toast.LENGTH_LONG).show();
+            });
+        }
 
-        siguiente.setOnClickListener(v -> {
-            LaylaAccessibilityService.programarPruebaSiguienteChat();
-            Toast.makeText(this, "Ve a Layla y abre un chat. Salto en 6 segundos.",
-                    Toast.LENGTH_LONG).show();
-        });
+        if (siguiente != null) {
+            siguiente.setOnClickListener(v -> {
+                LaylaAccessibilityService.programarPruebaSiguienteChat();
+                Toast.makeText(this, "Ve a Layla y abre un chat. Salto en 6 segundos.",
+                        Toast.LENGTH_LONG).show();
+            });
+        }
 
         detalles.setOnClickListener(v -> {
             boolean visible = salida.getVisibility() == View.VISIBLE;
@@ -99,64 +121,66 @@ public class MainActivity extends AppCompatActivity {
             detalles.setText(visible ? "DETALLES TÉCNICOS  ▾" : "DETALLES TÉCNICOS  ▴");
         });
 
-        guardarKey.setOnClickListener(v -> guardarClaves(etCfAccount, etCfToken, etKey));
-        probarIa.setOnClickListener(v -> probarIa());
+        // Guarda solo los campos que hayas llenado; los vacíos no borran lo anterior.
+        guardarKey.setOnClickListener(v -> {
+            String cuenta = etCfAccount.getText().toString().trim();
+            String token = etCfToken.getText().toString().trim();
+            String gemini = etKey.getText().toString().trim();
+            if (cuenta.isEmpty() && token.isEmpty() && gemini.isEmpty()) {
+                Toast.makeText(this, "Pega primero algún dato", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            SharedPreferences.Editor ed = prefs.edit();
+            if (!cuenta.isEmpty()) ed.putString("cf_account", cuenta);
+            if (!token.isEmpty()) ed.putString("cf_token", token);
+            if (!gemini.isEmpty()) ed.putString("gemini_key", gemini);
+            ed.apply();
+            etCfAccount.setText("");
+            etCfToken.setText("");
+            etKey.setText("");
+            actualizarEstadoIa();
+            Toast.makeText(this, "Guardado", Toast.LENGTH_SHORT).show();
+        });
+
+        probarIa.setOnClickListener(v -> {
+            String cuenta = prefs.getString("cf_account", "");
+            String token = prefs.getString("cf_token", "");
+            String gemini = prefs.getString("gemini_key", "");
+            if (cuenta.isEmpty() && token.isEmpty() && gemini.isEmpty()) {
+                Toast.makeText(this, "Guarda primero las claves", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            tvResultadoIa.setText("Probando... (puede tardar si la conexión está lenta)");
+            new Thread(() -> {
+                IaRepository ia = new IaRepository();
+                String resultado;
+                try {
+                    String r = ia.generar(cuenta, token, gemini,
+                            "Saluda en una frase corta en español.");
+                    resultado = "[" + ia.getUltimoProveedor() + "] " + r.trim();
+                } catch (Exception e) {
+                    resultado = "Error: " + e.getMessage();
+                }
+                final String texto = resultado;
+                runOnUiThread(() -> tvResultadoIa.setText(texto));
+            }).start();
+        });
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        mostrarInforme(state.informe());
+        handler.post(refrescar);
         actualizarEstadoIa();
     }
 
-    // ---------- Guardado de claves ----------
-    private void guardarClaves(EditText etCuenta, EditText etToken, EditText etKey) {
-        String cuenta = etCuenta.getText().toString().trim();
-        String token  = etToken.getText().toString().trim();
-        String gemini = etKey.getText().toString().trim();
-        if (cuenta.isEmpty() && token.isEmpty() && gemini.isEmpty()) {
-            Toast.makeText(this, "Pega primero algún dato", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        SharedPreferences.Editor ed = prefs.edit();
-        if (!cuenta.isEmpty()) ed.putString("cf_account", cuenta);
-        if (!token.isEmpty())  ed.putString("cf_token", token);
-        if (!gemini.isEmpty()) ed.putString("gemini_key", gemini);
-        ed.apply();
-        etCuenta.setText("");
-        etToken.setText("");
-        etKey.setText("");
-        actualizarEstadoIa();
-        Toast.makeText(this, "Guardado", Toast.LENGTH_SHORT).show();
+    @Override
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(refrescar);
     }
 
-    // ---------- Prueba de IA ----------
-    private void probarIa() {
-        String cuenta = prefs.getString("cf_account", "");
-        String token  = prefs.getString("cf_token", "");
-        String gemini = prefs.getString("gemini_key", "");
-        if (cuenta.isEmpty() && token.isEmpty() && gemini.isEmpty()) {
-            Toast.makeText(this, "Guarda primero las claves", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        tvResultadoIa.setText("Probando... (puede tardar si la conexión está lenta)");
-        new Thread(() -> {
-            IaRepository ia = new IaRepository();
-            String resultado;
-            try {
-                String r = ia.generar(cuenta, token, gemini,
-                        "Saluda en una frase corta en español.");
-                resultado = "[" + ia.getUltimoProveedor() + "] " + r.trim();
-            } catch (Exception e) {
-                resultado = "Error: " + e.getMessage();
-            }
-            final String texto = resultado;
-            runOnUiThread(() -> tvResultadoIa.setText(texto));
-        }).start();
-    }
-
-    // ---------- Estado de claves ----------
+    /** Muestra qué claves están guardadas (sin revelarlas). */
     private void actualizarEstadoIa() {
         boolean cf = !prefs.getString("cf_account", "").isEmpty()
                 && !prefs.getString("cf_token", "").isEmpty();
@@ -165,9 +189,12 @@ public class MainActivity extends AppCompatActivity {
                 + "   ·   Gemini: " + (gem ? "guardado ✓" : "no (opcional)"));
     }
 
-    // ---------- Informe / chat ----------
+    /** Reparte el informe de BotState en las tarjetas del panel. */
     private void mostrarInforme(String informe) {
         if (informe == null) informe = "";
+        if (informe.equals(ultimoInforme)) return; // nada cambió, no redibujar
+        ultimoInforme = informe;
+
         salida.setText(informe);
 
         boolean inactivo = informe.contains("no está activo")
@@ -176,20 +203,33 @@ public class MainActivity extends AppCompatActivity {
         tvServicio.setText(inactivo ? "Servicio desconectado" : "Servicio conectado");
         tvServicio.setTextColor(inactivo ? 0xFFC0392B : 0xFF1E8E5A);
 
-        tvEstado.setText(valorSeccion(informe, "ESTADO:", "ÚLTIMO MENSAJE ENTRANTE:"));
-        tvUltimo.setText(valorSeccion(informe, "ÚLTIMO MENSAJE ENTRANTE:", "CONVERSACIÓN VISIBLE:"));
+        String estado = seccion(informe, "ESTADO:", "ÚLTIMO MENSAJE ENTRANTE:");
+        String ultimo = seccion(informe, "ÚLTIMO MENSAJE ENTRANTE:", "CONVERSACIÓN VISIBLE:");
         String conversacion = seccion(informe, "CONVERSACIÓN VISIBLE:", "--- PANTALLA ---");
 
+        tvEstado.setText(estado.isEmpty() ? "—" : estado);
+        tvUltimo.setText(ultimo.isEmpty() ? "—" : ultimo);
+
         llChat.removeAllViews();
-        boolean hay = false;
+        boolean hayMensajes = false;
         for (String linea : conversacion.split("\n")) {
             linea = linea.trim();
             if (linea.isEmpty()) continue;
-            if (linea.startsWith("YO:")) { agregarBurbuja(linea.substring(3).trim(), true);  hay = true; }
-            else if (linea.startsWith("EL:")) { agregarBurbuja(linea.substring(2).trim(), false); hay = true; }
-            else if (linea.startsWith("?:"))  { agregarBurbuja(linea.substring(2).trim(), false); hay = true; }
+
+            // Separa la etiqueta (YO, EL, ?) del texto del mensaje.
+            String etiqueta = "";
+            String cuerpo = linea;
+            int dosPuntos = linea.indexOf(':');
+            if (dosPuntos >= 0 && dosPuntos <= 6) {
+                etiqueta = linea.substring(0, dosPuntos).trim().toUpperCase(Locale.ROOT);
+                cuerpo = linea.substring(dosPuntos + 1).trim();
+            }
+            if (cuerpo.isEmpty()) continue;
+
+            agregarBurbuja(cuerpo, etiqueta.equals("YO"));
+            hayMensajes = true;
         }
-        if (!hay) {
+        if (!hayMensajes) {
             TextView vacio = new TextView(this);
             vacio.setText("Sin mensajes visibles");
             vacio.setTextColor(0xFF6B7785);
@@ -198,11 +238,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private String valorSeccion(String t, String ini, String fin) {
-        String s = seccion(t, ini, fin);
-        return s.isEmpty() ? "—" : s;
-    }
-
+    /** Texto entre dos marcadores (sin incluirlos). Vacío si no se encuentra. */
     private String seccion(String texto, String inicio, String fin) {
         int i = texto.indexOf(inicio);
         if (i < 0) return "";
@@ -212,21 +248,14 @@ public class MainActivity extends AppCompatActivity {
         return texto.substring(desde, hasta).trim();
     }
 
-    /** Burbuja sin depender de drawables: usa GradientDrawable en código. */
     private void agregarBurbuja(String texto, boolean mio) {
         TextView t = new TextView(this);
         t.setText(texto);
         t.setTextSize(14);
         t.setTextColor(mio ? Color.WHITE : 0xFF1F2933);
+        t.setBackgroundResource(mio ? R.drawable.bg_bubble_yo : R.drawable.bg_card);
         t.setPadding(dp(14), dp(10), dp(14), dp(10));
         t.setMaxWidth(dp(260));
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(14));
-        bg.setColor(mio ? 0xFF2A6FB0 : 0xFFF1F3F6);
-        if (!mio) bg.setStroke(dp(1), 0xFFD9DEE5);
-        t.setBackground(bg);
-
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
