@@ -13,12 +13,10 @@ public class PromptBuilder {
             "IMPORTANTE: Solo devuelve el texto de tu respuesta. " +
             "No incluyas el prompt, ni el historial, ni etiquetas como 'Respuesta:'.";
 
-    /** Devuelve solo el system prompt. Se envía como systemInstruction a Gemini. */
     public String getSystemPrompt() {
         return SYSTEM_PROMPT;
     }
 
-    /** Construye el mensaje del usuario (historial + último mensaje). */
     public String construir(String nombreUsuario, String conversacion, String ultimoMensaje) {
         StringBuilder sb = new StringBuilder();
         if (nombreUsuario != null && !nombreUsuario.isEmpty()) {
