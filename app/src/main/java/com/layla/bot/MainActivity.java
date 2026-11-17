@@ -13,12 +13,14 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 
 import com.layla.bot.data.IaRepository;
 import com.layla.bot.service.BotState;
@@ -84,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
 
         tvFecha.setText(new SimpleDateFormat("d MMM yyyy", new Locale("es")).format(new Date()));
         actualizarEstadoIa();
+        agregarInterruptorAuto();
 
         actualizar.setOnClickListener(v -> mostrarInforme(state.informe()));
 
@@ -181,6 +184,24 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacks(refrescar);
     }
 
+    /** Interruptor "Respuesta automática con IA" (arranca apagado). */
+    private void agregarInterruptorAuto() {
+        SwitchCompat sw = new SwitchCompat(this);
+        sw.setText("Respuesta automática con IA");
+        sw.setTextColor(0xFF1F2933);
+        sw.setTextSize(15);
+        sw.setPadding(dp(4), dp(14), dp(4), dp(4));
+        sw.setChecked(prefs.getBoolean("auto_activo", false));
+        sw.setOnCheckedChangeListener((boton, activo) -> {
+            prefs.edit().putBoolean("auto_activo", activo).apply();
+            Toast.makeText(this,
+                    activo ? "Respuesta automática ACTIVADA" : "Respuesta automática apagada",
+                    Toast.LENGTH_SHORT).show();
+        });
+        ViewGroup contenido = (ViewGroup) aviso.getParent();
+        contenido.addView(sw, contenido.indexOfChild(aviso));
+    }
+
     /** Muestra qué claves están guardadas (sin revelarlas). */
     private void actualizarEstadoIa() {
         boolean cf = !prefs.getString("cf_account", "").isEmpty()
@@ -261,11 +282,9 @@ public class MainActivity extends AppCompatActivity {
         float grande = dp(18);
         float chico = dp(4);
         if (mio) {
-            // Esquina inferior derecha casi recta
             fondo.setCornerRadii(new float[]{grande, grande, grande, grande,
                     chico, chico, grande, grande});
         } else {
-            // Esquina inferior izquierda casi recta
             fondo.setCornerRadii(new float[]{grande, grande, grande, grande,
                     grande, grande, chico, chico});
             fondo.setStroke(dp(1), 0xFFE1E7EE);
