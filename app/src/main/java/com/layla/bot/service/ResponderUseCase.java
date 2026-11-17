@@ -17,7 +17,6 @@ public class ResponderUseCase {
         void onResultado(String mensaje);
     }
 
-    /** Se consulta justo antes de enviar: si devuelve false (bot en pausa), no se envía. */
     public interface Permiso {
         boolean puedeEnviar();
     }
@@ -38,18 +37,15 @@ public class ResponderUseCase {
         this.mainHandler = mainHandler;
     }
 
-    /**
-     * Pide la respuesta a la IA en un hilo aparte y luego la escribe y la envía
-     * en el hilo principal (donde deben ejecutarse las acciones de accesibilidad).
-     */
     public void responder(String cfAccount, String cfToken, String geminiKey,
                           String nombreUsuario, String conversacion,
                           String ultimoMensaje, Permiso permiso, Callback cb) {
         executor.execute(() -> {
             String respuesta;
             try {
-                String prompt = promptBuilder.construir(nombreUsuario, conversacion, ultimoMensaje);
-                respuesta = ia.generar(cfAccount, cfToken, geminiKey, prompt);
+                String systemPrompt = promptBuilder.getSystemPrompt();
+                String mensaje = promptBuilder.construir(nombreUsuario, conversacion, ultimoMensaje);
+                respuesta = ia.generar(cfAccount, cfToken, geminiKey, systemPrompt, mensaje);
             } catch (Exception e) {
                 final String error = "Error IA: " + e.getMessage();
                 mainHandler.post(() -> cb.onResultado(error));
@@ -74,12 +70,10 @@ public class ResponderUseCase {
         });
     }
 
-    /** Deja solo el texto del mensaje: sin bloques de código, comillas ni texto de más. */
     private String limpiar(String respuesta) {
         if (respuesta == null) return "";
         String t = respuesta.trim();
 
-        // Si el modelo metió bloques de código, quedarse con el contenido útil.
         int bloque = t.indexOf("```");
         if (bloque >= 0) {
             String antes = t.substring(0, bloque).trim();
@@ -88,14 +82,13 @@ public class ResponderUseCase {
             } else {
                 String resto = t.substring(bloque + 3);
                 int salto = resto.indexOf('\n');
-                if (salto >= 0) resto = resto.substring(salto + 1); // quita la palabra "markdown"
+                if (salto >= 0) resto = resto.substring(salto + 1);
                 int cierre = resto.indexOf("```");
                 if (cierre >= 0) resto = resto.substring(0, cierre);
                 t = resto.trim();
             }
         }
 
-        // Solo el primer párrafo: a veces el modelo sigue escribiendo de más.
         int parrafo = t.indexOf("\n\n");
         if (parrafo > 0) t = t.substring(0, parrafo).trim();
 
@@ -107,7 +100,6 @@ public class ResponderUseCase {
             t = t.substring(1, t.length() - 1).trim();
         }
 
-        // Límite de largo, cortando en un espacio para no partir palabras.
         if (t.length() > LARGO_MAXIMO) {
             t = t.substring(0, LARGO_MAXIMO);
             int espacio = t.lastIndexOf(' ');
