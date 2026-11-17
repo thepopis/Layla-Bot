@@ -1,10 +1,11 @@
 package com.layla.bot.service;
 
-import com.layla.bot.accessibility.ChatReader;
+import android.os.Handler;
+
 import com.layla.bot.accessibility.ChatWriter;
-import com.layla.bot.data.GeminiRepository;
+import com.layla.bot.data.IaRepository;
 import com.layla.bot.domain.PromptBuilder;
-import android.view.accessibility.AccessibilityNodeInfo;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -14,38 +15,62 @@ public class ResponderUseCase {
         void onResultado(String mensaje);
     }
 
-    private final GeminiRepository geminiRepository;
+    private final IaRepository ia;
     private final PromptBuilder promptBuilder;
-    private final ChatReader chatReader;
     private final ChatWriter chatWriter;
+    private final Handler mainHandler;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    public ResponderUseCase(GeminiRepository geminiRepository,
+    public ResponderUseCase(IaRepository ia,
                             PromptBuilder promptBuilder,
-                            ChatReader chatReader,
-                            ChatWriter chatWriter) {
-        this.geminiRepository = geminiRepository;
+                            ChatWriter chatWriter,
+                            Handler mainHandler) {
+        this.ia = ia;
         this.promptBuilder = promptBuilder;
-        this.chatReader = chatReader;
         this.chatWriter = chatWriter;
+        this.mainHandler = mainHandler;
     }
 
-    public void responder(AccessibilityNodeInfo root, String apiKey,
+    /**
+     * Pide la respuesta a la IA en un hilo aparte y luego la escribe y la envía
+     * en el hilo principal (donde deben ejecutarse las acciones de accesibilidad).
+     */
+    public void responder(String cfAccount, String cfToken, String geminiKey,
                           String nombreUsuario, String conversacion,
                           String ultimoMensaje, Callback cb) {
         executor.execute(() -> {
+            String respuesta;
             try {
                 String prompt = promptBuilder.construir(nombreUsuario, conversacion, ultimoMensaje);
-                String respuesta = geminiRepository.generarRespuesta(apiKey, prompt);
-                if (respuesta == null || respuesta.trim().isEmpty()) {
-                    cb.onResultado("Gemini devolvió vacío.");
-                    return;
-                }
-                chatWriter.escribirYEnviar(respuesta.trim(),
-                        resultado -> cb.onResultado("Respuesta enviada: " + resultado));
+                respuesta = ia.generar(cfAccount, cfToken, geminiKey, prompt);
             } catch (Exception e) {
-                cb.onResultado("Error IA: " + e.getMessage());
+                final String error = "Error IA: " + e.getMessage();
+                mainHandler.post(() -> cb.onResultado(error));
+                return;
             }
+
+            final String texto = limpiar(respuesta);
+            final String proveedor = ia.getUltimoProveedor();
+            if (texto.isEmpty()) {
+                mainHandler.post(() -> cb.onResultado("La IA devolvió una respuesta vacía."));
+                return;
+            }
+
+            mainHandler.post(() -> chatWriter.escribirYEnviar(texto,
+                    resultado -> cb.onResultado("Respondió " + proveedor + ": " + resultado)));
         });
+    }
+
+    /** Quita comillas y prefijos que a veces añade el modelo. */
+    private String limpiar(String respuesta) {
+        if (respuesta == null) return "";
+        String t = respuesta.trim();
+        if (t.startsWith("Layla:")) t = t.substring(6).trim();
+        boolean comillasRectas = t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"");
+        boolean comillasCurvas = t.length() >= 2 && t.startsWith("“") && t.endsWith("”");
+        if (comillasRectas || comillasCurvas) {
+            t = t.substring(1, t.length() - 1).trim();
+        }
+        return t;
     }
 }
