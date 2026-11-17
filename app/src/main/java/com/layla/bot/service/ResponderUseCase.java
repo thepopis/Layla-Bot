@@ -11,6 +11,8 @@ import java.util.concurrent.Executors;
 
 public class ResponderUseCase {
 
+    private static final int LARGO_MAXIMO = 300;
+
     public interface Callback {
         void onResultado(String mensaje);
     }
@@ -72,15 +74,45 @@ public class ResponderUseCase {
         });
     }
 
-    /** Quita comillas y prefijos que a veces añade el modelo. */
+    /** Deja solo el texto del mensaje: sin bloques de código, comillas ni texto de más. */
     private String limpiar(String respuesta) {
         if (respuesta == null) return "";
         String t = respuesta.trim();
+
+        // Si el modelo metió bloques de código, quedarse con el contenido útil.
+        int bloque = t.indexOf("```");
+        if (bloque >= 0) {
+            String antes = t.substring(0, bloque).trim();
+            if (!antes.isEmpty()) {
+                t = antes;
+            } else {
+                String resto = t.substring(bloque + 3);
+                int salto = resto.indexOf('\n');
+                if (salto >= 0) resto = resto.substring(salto + 1); // quita la palabra "markdown"
+                int cierre = resto.indexOf("```");
+                if (cierre >= 0) resto = resto.substring(0, cierre);
+                t = resto.trim();
+            }
+        }
+
+        // Solo el primer párrafo: a veces el modelo sigue escribiendo de más.
+        int parrafo = t.indexOf("\n\n");
+        if (parrafo > 0) t = t.substring(0, parrafo).trim();
+
         if (t.startsWith("Layla:")) t = t.substring(6).trim();
+
         boolean comillasRectas = t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"");
         boolean comillasCurvas = t.length() >= 2 && t.startsWith("“") && t.endsWith("”");
         if (comillasRectas || comillasCurvas) {
             t = t.substring(1, t.length() - 1).trim();
+        }
+
+        // Límite de largo, cortando en un espacio para no partir palabras.
+        if (t.length() > LARGO_MAXIMO) {
+            t = t.substring(0, LARGO_MAXIMO);
+            int espacio = t.lastIndexOf(' ');
+            if (espacio > LARGO_MAXIMO / 2) t = t.substring(0, espacio);
+            t = t.trim();
         }
         return t;
     }
