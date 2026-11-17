@@ -38,6 +38,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvResultadoIa;
     private TextView tvIaEstado;
     private LinearLayout llChat;
+    private SwitchCompat swAuto;
     private BotState state;
     private SharedPreferences prefs;
 
@@ -176,6 +177,8 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         handler.post(refrescar);
         actualizarEstadoIa();
+        // Por si se cambió desde la burbuja flotante mientras la app estaba en segundo plano
+        if (swAuto != null) swAuto.setChecked(prefs.getBoolean("auto_activo", false));
     }
 
     @Override
@@ -186,20 +189,22 @@ public class MainActivity extends AppCompatActivity {
 
     /** Interruptor "Respuesta automática con IA" (arranca apagado). */
     private void agregarInterruptorAuto() {
-        SwitchCompat sw = new SwitchCompat(this);
-        sw.setText("Respuesta automática con IA");
-        sw.setTextColor(0xFF1F2933);
-        sw.setTextSize(15);
-        sw.setPadding(dp(4), dp(14), dp(4), dp(4));
-        sw.setChecked(prefs.getBoolean("auto_activo", false));
-        sw.setOnCheckedChangeListener((boton, activo) -> {
+        swAuto = new SwitchCompat(this);
+        swAuto.setText("Respuesta automática con IA");
+        swAuto.setTextColor(0xFF1F2933);
+        swAuto.setTextSize(15);
+        swAuto.setPadding(dp(4), dp(14), dp(4), dp(4));
+        swAuto.setChecked(prefs.getBoolean("auto_activo", false));
+        swAuto.setOnCheckedChangeListener((boton, activo) -> {
+            // Si el valor ya coincide, es solo una sincronización: no hacer nada.
+            if (activo == prefs.getBoolean("auto_activo", false)) return;
             prefs.edit().putBoolean("auto_activo", activo).apply();
             Toast.makeText(this,
                     activo ? "Respuesta automática ACTIVADA" : "Respuesta automática apagada",
                     Toast.LENGTH_SHORT).show();
         });
         ViewGroup contenido = (ViewGroup) aviso.getParent();
-        contenido.addView(sw, contenido.indexOfChild(aviso));
+        contenido.addView(swAuto, contenido.indexOfChild(aviso));
     }
 
     /** Muestra qué claves están guardadas (sin revelarlas). */
@@ -298,7 +303,7 @@ public class MainActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.gravity = mio ? Gravity.END : Gravity.START;
         lp.topMargin = dp(6);
-        llChat.addView(t, lp);
+        llChat.addView(lp == null ? t : t, lp);
     }
 
     private int dp(int valor) {
