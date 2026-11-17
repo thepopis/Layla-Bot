@@ -2,13 +2,25 @@ package com.layla.bot;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import com.layla.bot.accessibility.ChatReader;
 import com.layla.bot.accessibility.ChatWriter;
@@ -35,10 +47,13 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private static final long MAX_ESPERA_MS = 3000;
     /** Si una respuesta tarda más que esto, se asume que se colgó y se libera el bot. */
     private static final long MAX_RESPONDIENDO_MS = 90000;
+    /** Mantener pulsada la burbuja este tiempo abre el panel. */
+    private static final long PULSACION_LARGA_MS = 700;
 
     private static LaylaAccessibilityService instance;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private SharedPreferences prefs;
     private ChatReader chatReader;
     private ChatWriter chatWriter;
     private ChatParser chatParser;
@@ -56,12 +71,30 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private String ultimaClave = null;
     private String ultimaAccion = "-";
 
+    // Burbuja flotante
+    private WindowManager windowManager;
+    private TextView burbuja;
+    private WindowManager.LayoutParams burbujaParams;
+
+    /** Si cambia el interruptor (desde la burbuja o desde la app), actualiza la burbuja. */
+    private final SharedPreferences.OnSharedPreferenceChangeListener alCambiarPrefs =
+            (sp, clave) -> {
+                if ("auto_activo".equals(clave)) {
+                    // Al encender, puede responder lo que haya pendiente en el chat abierto.
+                    if (sp.getBoolean("auto_activo", false)) ultimaClave = null;
+                    actualizarBurbuja();
+                }
+            };
+
     private final Runnable leer = () -> leerPantalla();
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
+        prefs = getSharedPreferences("layla_prefs", Context.MODE_PRIVATE);
+        prefs.registerOnSharedPreferenceChangeListener(alCambiarPrefs);
+
         state = new BotState(this);
         chatReader = new ChatReader();
         chatWriter = new ChatWriter(this, handler);
@@ -77,11 +110,21 @@ public class LaylaAccessibilityService extends AccessibilityService {
         ultimaAccion = "-";
         state.marcarServicioActivo(true);
         state.setDiagnostico("esperando eventos de Layla");
+
+        crearBurbuja();
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        quitarBurbuja();
+        return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
+        quitarBurbuja();
+        if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(alCambiarPrefs);
         if (state != null) state.marcarServicioActivo(false);
         instance = null;
     }
@@ -184,16 +227,16 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** Si la respuesta automática está encendida y EL escribió último, pide la respuesta a la IA. */
+    /** Si el bot está encendido y EL escribió último, pide la respuesta a la IA. */
     private void intentarResponder(AccessibilityNodeInfo root, String conversacion) {
-        SharedPreferences p = getSharedPreferences("layla_prefs", Context.MODE_PRIVATE);
-        if (!p.getBoolean("auto_activo", false)) return;
+        if (!prefs.getBoolean("auto_activo", false)) return;
         if (conversacion == null || conversacion.isEmpty()) return;
 
         if (respondiendo) {
             // Salvavidas: si lleva demasiado tiempo, liberar para no quedarse bloqueado.
             if (SystemClock.uptimeMillis() - inicioRespuesta < MAX_RESPONDIENDO_MS) return;
             respondiendo = false;
+            actualizarBurbuja();
         }
 
         List<Mensaje> mensajes = chatParser.parsear(conversacion);
@@ -205,9 +248,9 @@ public class LaylaAccessibilityService extends AccessibilityService {
         String clave = mensajes.size() + "|" + ultimo.getTexto();
         if (clave.equals(ultimaClave)) return;
 
-        String cuenta = p.getString("cf_account", "");
-        String token = p.getString("cf_token", "");
-        String gemini = p.getString("gemini_key", "");
+        String cuenta = prefs.getString("cf_account", "");
+        String token = prefs.getString("cf_token", "");
+        String gemini = prefs.getString("gemini_key", "");
         boolean hayCloudflare = !cuenta.isEmpty() && !token.isEmpty();
         if (!hayCloudflare && gemini.isEmpty()) {
             ultimaAccion = "faltan las claves de la IA";
@@ -218,12 +261,16 @@ public class LaylaAccessibilityService extends AccessibilityService {
         respondiendo = true;
         inicioRespuesta = SystemClock.uptimeMillis();
         ultimaAccion = "generando respuesta...";
+        actualizarBurbuja();
 
         String nombre = leerNombre(root);
         responderUseCase.responder(cuenta, token, gemini, nombre, conversacion,
-                ultimo.getTexto(), resultado -> {
+                ultimo.getTexto(),
+                () -> prefs.getBoolean("auto_activo", false),
+                resultado -> {
                     respondiendo = false;
                     ultimaAccion = resultado;
+                    actualizarBurbuja();
                     diagnostico("acción del bot");
                 });
     }
@@ -249,5 +296,151 @@ public class LaylaAccessibilityService extends AccessibilityService {
                 + " · " + detalle
                 + " · bot: " + ultimaAccion
                 + " · " + hora);
+    }
+
+    // ------------------------------------------------------------------
+    // Burbuja flotante
+    // ------------------------------------------------------------------
+
+    private void crearBurbuja() {
+        if (burbuja != null) return;
+        try {
+            windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            int tam = dp(54);
+
+            burbuja = new TextView(this);
+            burbuja.setGravity(Gravity.CENTER);
+            burbuja.setTextColor(Color.WHITE);
+            burbuja.setTextSize(12);
+            burbuja.setTypeface(Typeface.DEFAULT_BOLD);
+            burbuja.setContentDescription("Botón del bot de Layla");
+
+            burbujaParams = new WindowManager.LayoutParams(
+                    tam, tam,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    PixelFormat.TRANSLUCENT);
+            burbujaParams.gravity = Gravity.TOP | Gravity.START;
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            burbujaParams.x = prefs.getInt("bubble_x", dm.widthPixels - tam - dp(8));
+            burbujaParams.y = prefs.getInt("bubble_y", dm.heightPixels / 3);
+
+            burbuja.setOnTouchListener(new View.OnTouchListener() {
+                private int inicioX;
+                private int inicioY;
+                private float toqueX;
+                private float toqueY;
+                private boolean arrastrando;
+                private long inicioToque;
+
+                @Override
+                public boolean onTouch(View v, MotionEvent e) {
+                    switch (e.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            inicioX = burbujaParams.x;
+                            inicioY = burbujaParams.y;
+                            toqueX = e.getRawX();
+                            toqueY = e.getRawY();
+                            arrastrando = false;
+                            inicioToque = SystemClock.uptimeMillis();
+                            return true;
+
+                        case MotionEvent.ACTION_MOVE:
+                            float dx = e.getRawX() - toqueX;
+                            float dy = e.getRawY() - toqueY;
+                            if (!arrastrando && (Math.abs(dx) > dp(8) || Math.abs(dy) > dp(8))) {
+                                arrastrando = true;
+                            }
+                            if (arrastrando) {
+                                burbujaParams.x = inicioX + (int) dx;
+                                burbujaParams.y = inicioY + (int) dy;
+                                windowManager.updateViewLayout(v, burbujaParams);
+                            }
+                            return true;
+
+                        case MotionEvent.ACTION_UP:
+                            if (arrastrando) {
+                                prefs.edit()
+                                        .putInt("bubble_x", burbujaParams.x)
+                                        .putInt("bubble_y", burbujaParams.y)
+                                        .apply();
+                            } else if (SystemClock.uptimeMillis() - inicioToque >= PULSACION_LARGA_MS) {
+                                abrirPanel();
+                            } else {
+                                alternarBot();
+                            }
+                            return true;
+
+                        default:
+                            return false;
+                    }
+                }
+            });
+
+            windowManager.addView(burbuja, burbujaParams);
+            actualizarBurbuja();
+        } catch (Exception e) {
+            Log.e(TAG, "No se pudo crear la burbuja", e);
+            burbuja = null;
+        }
+    }
+
+    private void quitarBurbuja() {
+        if (burbuja != null && windowManager != null) {
+            try {
+                windowManager.removeView(burbuja);
+            } catch (Exception e) {
+                Log.w(TAG, "No se pudo quitar la burbuja", e);
+            }
+        }
+        burbuja = null;
+    }
+
+    /** Verde ON = respondiendo solo · ámbar ··· = generando · gris OFF = en pausa. */
+    private void actualizarBurbuja() {
+        if (burbuja == null) return;
+        boolean activo = prefs.getBoolean("auto_activo", false);
+        int color;
+        String texto;
+        if (!activo) {
+            color = 0xFF6B7785;
+            texto = "OFF";
+        } else if (respondiendo) {
+            color = 0xFFF59E0B;
+            texto = "···";
+        } else {
+            color = 0xFF1E8E5A;
+            texto = "ON";
+        }
+        GradientDrawable fondo = new GradientDrawable();
+        fondo.setShape(GradientDrawable.OVAL);
+        fondo.setColor(color);
+        fondo.setStroke(dp(2), 0xFFFFFFFF);
+        burbuja.setBackground(fondo);
+        burbuja.setText(texto);
+        burbuja.setAlpha(0.9f);
+    }
+
+    private void alternarBot() {
+        boolean nuevo = !prefs.getBoolean("auto_activo", false);
+        prefs.edit().putBoolean("auto_activo", nuevo).apply();
+        Toast.makeText(this, nuevo ? "Bot ACTIVADO" : "Bot en pausa", Toast.LENGTH_SHORT).show();
+        actualizarBurbuja();
+    }
+
+    private void abrirPanel() {
+        try {
+            Intent i = new Intent(this, MainActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            startActivity(i);
+        } catch (Exception e) {
+            Log.w(TAG, "No se pudo abrir el panel", e);
+            Toast.makeText(this, "No pude abrir el panel. Ábrelo desde el icono de la app.",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private int dp(int valor) {
+        return Math.round(valor * getResources().getDisplayMetrics().density);
     }
 }
