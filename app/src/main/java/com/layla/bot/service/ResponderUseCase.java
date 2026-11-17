@@ -74,6 +74,7 @@ public class ResponderUseCase {
         if (respuesta == null) return "";
         String t = respuesta.trim();
 
+        // Quitar bloques de código si el modelo los mete
         int bloque = t.indexOf("```");
         if (bloque >= 0) {
             String antes = t.substring(0, bloque).trim();
@@ -89,17 +90,30 @@ public class ResponderUseCase {
             }
         }
 
+        // Solo el primer párrafo
         int parrafo = t.indexOf("\n\n");
         if (parrafo > 0) t = t.substring(0, parrafo).trim();
 
+        // Quitar prefijo "Layla:"
         if (t.startsWith("Layla:")) t = t.substring(6).trim();
 
+        // Quitar comillas envolventes
         boolean comillasRectas = t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"");
         boolean comillasCurvas = t.length() >= 2 && t.startsWith("“") && t.endsWith("”");
         if (comillasRectas || comillasCurvas) {
             t = t.substring(1, t.length() - 1).trim();
         }
 
+        // Eliminar signos de interrogación (apertura y cierre)
+        t = t.replace("¿", "").replace("?", "");
+
+        // Eliminar puntos, comas, exclamaciones y puntos suspensivos del final
+        while (t.endsWith(".") || t.endsWith(",") || t.endsWith(" ")
+                || t.endsWith("!") || t.endsWith("…")) {
+            t = t.substring(0, t.length() - 1).trim();
+        }
+
+        // Límite de largo, cortando en un espacio para no partir palabras
         if (t.length() > LARGO_MAXIMO) {
             t = t.substring(0, LARGO_MAXIMO);
             int espacio = t.lastIndexOf(' ');
