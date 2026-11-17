@@ -23,6 +23,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
 import com.layla.bot.data.IaRepository;
+import com.layla.bot.domain.PromptBuilder;
 import com.layla.bot.service.BotState;
 
 import java.text.SimpleDateFormat;
@@ -45,7 +46,6 @@ public class MainActivity extends AppCompatActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String ultimoInforme = null;
 
-    /** Refresca el panel solo, cada 2 segundos, mientras la app está abierta. */
     private final Runnable refrescar = new Runnable() {
         @Override
         public void run() {
@@ -126,7 +126,6 @@ public class MainActivity extends AppCompatActivity {
             detalles.setText(visible ? "DETALLES TÉCNICOS  ▾" : "DETALLES TÉCNICOS  ▴");
         });
 
-        // Guarda solo los campos que hayas llenado; los vacíos no borran lo anterior.
         guardarKey.setOnClickListener(v -> {
             String cuenta = etCfAccount.getText().toString().trim();
             String token = etCfToken.getText().toString().trim();
@@ -160,8 +159,11 @@ public class MainActivity extends AppCompatActivity {
                 IaRepository ia = new IaRepository();
                 String resultado;
                 try {
-                    String r = ia.generar(cuenta, token, gemini,
-                            "Saluda en una frase corta en español.");
+                    PromptBuilder promptBuilder = new PromptBuilder();
+                    String systemPrompt = promptBuilder.getSystemPrompt();
+                    String mensaje = "Saluda en una frase corta en español, "
+                            + "siguiendo las reglas de estilo.";
+                    String r = ia.generar(cuenta, token, gemini, systemPrompt, mensaje);
                     resultado = "[" + ia.getUltimoProveedor() + "] " + r.trim();
                 } catch (Exception e) {
                     resultado = "Error: " + e.getMessage();
@@ -177,7 +179,6 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         handler.post(refrescar);
         actualizarEstadoIa();
-        // Por si se cambió desde la burbuja flotante mientras la app estaba en segundo plano
         if (swAuto != null) swAuto.setChecked(prefs.getBoolean("auto_activo", false));
     }
 
@@ -187,7 +188,6 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacks(refrescar);
     }
 
-    /** Interruptor "Respuesta automática con IA" (arranca apagado). */
     private void agregarInterruptorAuto() {
         swAuto = new SwitchCompat(this);
         swAuto.setText("Respuesta automática con IA");
@@ -196,7 +196,6 @@ public class MainActivity extends AppCompatActivity {
         swAuto.setPadding(dp(4), dp(14), dp(4), dp(4));
         swAuto.setChecked(prefs.getBoolean("auto_activo", false));
         swAuto.setOnCheckedChangeListener((boton, activo) -> {
-            // Si el valor ya coincide, es solo una sincronización: no hacer nada.
             if (activo == prefs.getBoolean("auto_activo", false)) return;
             prefs.edit().putBoolean("auto_activo", activo).apply();
             Toast.makeText(this,
@@ -207,7 +206,6 @@ public class MainActivity extends AppCompatActivity {
         contenido.addView(swAuto, contenido.indexOfChild(aviso));
     }
 
-    /** Muestra qué claves están guardadas (sin revelarlas). */
     private void actualizarEstadoIa() {
         boolean cf = !prefs.getString("cf_account", "").isEmpty()
                 && !prefs.getString("cf_token", "").isEmpty();
@@ -216,10 +214,9 @@ public class MainActivity extends AppCompatActivity {
                 + "   ·   Gemini: " + (gem ? "guardado ✓" : "no (opcional)"));
     }
 
-    /** Reparte el informe de BotState en las tarjetas del panel. */
     private void mostrarInforme(String informe) {
         if (informe == null) informe = "";
-        if (informe.equals(ultimoInforme)) return; // nada cambió, no redibujar
+        if (informe.equals(ultimoInforme)) return;
         ultimoInforme = informe;
 
         salida.setText(informe);
@@ -243,7 +240,6 @@ public class MainActivity extends AppCompatActivity {
             linea = linea.trim();
             if (linea.isEmpty()) continue;
 
-            // Separa la etiqueta (YO, EL, ?) del texto del mensaje.
             String etiqueta = "";
             String cuerpo = linea;
             int dosPuntos = linea.indexOf(':');
@@ -265,7 +261,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Texto entre dos marcadores (sin incluirlos). Vacío si no se encuentra. */
     private String seccion(String texto, String inicio, String fin) {
         int i = texto.indexOf(inicio);
         if (i < 0) return "";
@@ -275,7 +270,6 @@ public class MainActivity extends AppCompatActivity {
         return texto.substring(desde, hasta).trim();
     }
 
-    /** Burbuja de chat dibujada por código (no depende de archivos drawable). */
     private void agregarBurbuja(String texto, boolean mio) {
         TextView t = new TextView(this);
         t.setText(texto);
@@ -303,7 +297,7 @@ public class MainActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.gravity = mio ? Gravity.END : Gravity.START;
         lp.topMargin = dp(6);
-        llChat.addView(lp == null ? t : t, lp);
+        llChat.addView(t, lp);
     }
 
     private int dp(int valor) {
