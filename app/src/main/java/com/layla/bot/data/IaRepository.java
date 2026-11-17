@@ -8,14 +8,13 @@ public class IaRepository {
     private final GeminiRepository gemini = new GeminiRepository();
     private volatile String ultimoProveedor = "";
 
-    /** Nombre del proveedor que respondió la última vez. */
     public String getUltimoProveedor() {
         return ultimoProveedor;
     }
 
     /** Llamar desde un hilo secundario. */
-    public String generar(String cfAccount, String cfToken, String geminiKey, String prompt)
-            throws IOException {
+    public String generar(String cfAccount, String cfToken, String geminiKey,
+                          String systemPrompt, String mensaje) throws IOException {
         boolean hayCloudflare = !vacio(cfAccount) && !vacio(cfToken);
         boolean hayGemini = !vacio(geminiKey);
         if (!hayCloudflare && !hayGemini) {
@@ -24,9 +23,12 @@ public class IaRepository {
 
         StringBuilder errores = new StringBuilder();
 
+        // Cloudflare usa el prompt completo (system + mensaje)
         if (hayCloudflare) {
             try {
-                String r = cloudflare.generarRespuesta(cfAccount.trim(), cfToken.trim(), prompt);
+                String promptCompleto = systemPrompt + "\n\n" + mensaje;
+                String r = cloudflare.generarRespuesta(
+                        cfAccount.trim(), cfToken.trim(), promptCompleto);
                 ultimoProveedor = "Cloudflare";
                 return r;
             } catch (IOException e) {
@@ -34,9 +36,11 @@ public class IaRepository {
             }
         }
 
+        // Gemini recibe system y mensaje por separado
         if (hayGemini) {
             try {
-                String r = gemini.generarRespuesta(geminiKey.trim(), prompt);
+                String r = gemini.generarRespuesta(
+                        geminiKey.trim(), systemPrompt, mensaje);
                 ultimoProveedor = "Gemini";
                 return r;
             } catch (IOException e) {
