@@ -1,14 +1,16 @@
 package com.layla.bot.domain;
 
 import com.layla.bot.domain.model.Mensaje;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class ChatParser {
 
     /**
      * Recibe el texto de "CONVERSACIÓN VISIBLE" y devuelve la lista de mensajes.
-     * Formato esperado por línea: "YO: texto" o "ELLOS: texto"
+     * Formato por línea: "YO: texto" o "EL: texto" (también acepta "ÉL" y "ELLOS").
      */
     public List<Mensaje> parsear(String volcado) {
         List<Mensaje> resultado = new ArrayList<>();
@@ -21,14 +23,18 @@ public class ChatParser {
             int idx = linea.indexOf(':');
             if (idx <= 0) continue;
 
-            String prefijo = linea.substring(0, idx).trim();
+            String prefijo = linea.substring(0, idx).trim().toUpperCase(Locale.ROOT);
             String texto = linea.substring(idx + 1).trim();
             if (texto.isEmpty()) continue;
 
             Mensaje.Autor autor;
-            if (prefijo.equalsIgnoreCase("YO")) autor = Mensaje.Autor.YO;
-            else if (prefijo.equalsIgnoreCase("ELLOS")) autor = Mensaje.Autor.ELLOS;
-            else autor = Mensaje.Autor.DESCONOCIDO;
+            if (prefijo.equals("YO")) {
+                autor = Mensaje.Autor.YO;
+            } else if (prefijo.equals("EL") || prefijo.equals("ÉL") || prefijo.equals("ELLOS")) {
+                autor = Mensaje.Autor.ELLOS;
+            } else {
+                autor = Mensaje.Autor.DESCONOCIDO;
+            }
 
             resultado.add(new Mensaje(autor, texto));
         }
