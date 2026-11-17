@@ -19,23 +19,18 @@ public class GeminiRepository {
 
     private final OkHttpClient client = new OkHttpClient();
 
-    /**
-     * @param apiKey        Clave de Gemini
-     * @param systemPrompt  El system prompt (rol de Layla)
-     * @param mensaje       El mensaje del usuario (historial + último mensaje)
-     */
     public String generarRespuesta(String apiKey, String systemPrompt, String mensaje)
             throws IOException {
         JSONObject body = new JSONObject();
         try {
-            // 1. systemInstruction: el rol de Layla
+            // systemInstruction: el rol de Layla (separado del mensaje del usuario)
             JSONObject sysInstr = new JSONObject();
             JSONArray sysParts = new JSONArray();
             sysParts.put(new JSONObject().put("text", systemPrompt));
             sysInstr.put("parts", sysParts);
             body.put("systemInstruction", sysInstr);
 
-            // 2. contents: el mensaje del usuario
+            // contents: el mensaje del usuario
             JSONArray contents = new JSONArray();
             JSONObject content = new JSONObject();
             content.put("role", "user");
@@ -45,12 +40,11 @@ public class GeminiRepository {
             contents.put(content);
             body.put("contents", contents);
 
-            // 3. Configuración de generación
+            // Configuración de generación
             JSONObject genConfig = new JSONObject();
             genConfig.put("temperature", 0.9);
             genConfig.put("maxOutputTokens", 200);
             body.put("generationConfig", genConfig);
-
         } catch (Exception e) {
             throw new IOException("Error construyendo JSON", e);
         }
@@ -70,13 +64,13 @@ public class GeminiRepository {
             }
             String raw = response.body() != null ? response.body().string() : "";
             JSONObject json = new JSONObject(raw);
-            String texto = json.getJSONArray("candidates")
+            return json.getJSONArray("candidates")
                     .getJSONObject(0)
                     .getJSONObject("content")
                     .getJSONArray("parts")
                     .getJSONObject(0)
-                    .getString("text");
-            return texto.trim();
+                    .getString("text")
+                    .trim();
         } catch (Exception e) {
             throw new IOException("Error parseando respuesta", e);
         }
