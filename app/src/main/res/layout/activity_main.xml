@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_app"
+    android:background="#0F1720"
     android:fillViewport="true">
 
     <LinearLayout
@@ -14,7 +14,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_header"
+            android:background="#1B2430"
             android:orientation="vertical"
             android:paddingStart="20dp"
             android:paddingTop="16dp"
@@ -66,7 +66,8 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_card"
+                    android:background="#FFFFFF"
+                    android:elevation="2dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:padding="14dp">
@@ -74,7 +75,7 @@
                     <View
                         android:layout_width="44dp"
                         android:layout_height="44dp"
-                        android:background="@drawable/bg_logo"/>
+                        android:background="#2A6FB0"/>
 
                     <LinearLayout
                         android:layout_width="wrap_content"
@@ -103,11 +104,10 @@
                     android:layout_width="78dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_button"
-                    android:drawableTop="@drawable/ic_refresh"
+                    android:backgroundTint="#E3E8EF"
                     android:padding="8dp"
                     android:stateListAnimator="@null"
-                    android:text="Actualizar"
+                    android:text="↻\nActualizar"
                     android:textColor="#3A4452"
                     android:textSize="10sp"/>
 
@@ -116,11 +116,10 @@
                     android:layout_width="78dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_button"
-                    android:drawableTop="@drawable/ic_copy"
+                    android:backgroundTint="#E3E8EF"
                     android:padding="8dp"
                     android:stateListAnimator="@null"
-                    android:text="Copiar"
+                    android:text="⧉\nCopiar"
                     android:textColor="#3A4452"
                     android:textSize="10sp"/>
             </LinearLayout>
@@ -142,7 +141,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginBottom="8dp"
-                android:background="@drawable/bg_button"
+                android:backgroundTint="#E3E8EF"
                 android:stateListAnimator="@null"
                 android:text="Prueba de escritura (6 s)"
                 android:textColor="#2B323C"/>
@@ -152,7 +151,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginBottom="8dp"
-                android:background="@drawable/bg_button"
+                android:backgroundTint="#E3E8EF"
                 android:stateListAnimator="@null"
                 android:text="Prueba siguiente chat (6 s)"
                 android:textColor="#2B323C"/>
@@ -161,7 +160,7 @@
                 android:id="@+id/btn_ajustes"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:background="@drawable/bg_button"
+                android:backgroundTint="#E3E8EF"
                 android:stateListAnimator="@null"
                 android:text="Ajustes de accesibilidad"
                 android:textColor="#2B323C"/>
@@ -172,7 +171,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                android:background="@drawable/bg_warning"
+                android:background="#FDECEA"
                 android:padding="12dp"
                 android:text="⚠  El servicio de accesibilidad no está activo. Toca aquí para activarlo en Ajustes."
                 android:textColor="#7A5B00"
@@ -184,7 +183,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                android:background="@drawable/bg_card"
+                android:background="#FFFFFF"
+                android:elevation="2dp"
                 android:orientation="vertical"
                 android:padding="14dp">
 
@@ -211,7 +211,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card"
+                android:background="#FFFFFF"
+                android:elevation="2dp"
                 android:orientation="vertical"
                 android:padding="14dp">
 
@@ -238,7 +239,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card"
+                android:background="#FFFFFF"
+                android:elevation="2dp"
                 android:orientation="vertical"
                 android:padding="14dp">
 
@@ -264,7 +266,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card"
+                android:background="#FFFFFF"
+                android:elevation="2dp"
                 android:orientation="vertical"
                 android:padding="14dp">
 
@@ -282,7 +285,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_button"
+                    android:background="#F1F3F6"
                     android:hint="Cloudflare Account ID"
                     android:inputType="textNoSuggestions"
                     android:padding="12dp"
@@ -293,7 +296,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_button"
+                    android:background="#F1F3F6"
                     android:hint="Cloudflare API Token"
                     android:inputType="textPassword"
                     android:padding="12dp"
@@ -304,7 +307,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_button"
+                    android:background="#F1F3F6"
                     android:hint="Gemini API Key (opcional, respaldo)"
                     android:inputType="textPassword"
                     android:padding="12dp"
@@ -322,7 +325,7 @@
                         android:layout_height="46dp"
                         android:layout_marginEnd="4dp"
                         android:layout_weight="1"
-                        android:background="@drawable/bg_button"
+                        android:backgroundTint="#E3E8EF"
                         android:stateListAnimator="@null"
                         android:text="Guardar"
                         android:textColor="#2B323C"
@@ -334,7 +337,7 @@
                         android:layout_height="46dp"
                         android:layout_marginStart="4dp"
                         android:layout_weight="1"
-                        android:background="@drawable/bg_button_primary"
+                        android:backgroundTint="#2A6FB0"
                         android:stateListAnimator="@null"
                         android:text="Probar IA"
                         android:textColor="#FFFFFF"
@@ -365,7 +368,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card"
+                android:background="#FFFFFF"
+                android:elevation="2dp"
                 android:letterSpacing="0.08"
                 android:padding="14dp"
                 android:text="DETALLES TÉCNICOS  ▾"
@@ -379,7 +383,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="24dp"
-                android:background="@drawable/bg_card"
+                android:background="#FFFFFF"
+                android:elevation="2dp"
                 android:padding="14dp"
                 android:textColor="#1F2933"
                 android:textIsSelectable="true"
