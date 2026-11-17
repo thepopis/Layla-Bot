@@ -28,6 +28,12 @@ public class CloudflareRepository {
     };
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
+    /** Instrucción fija para que el modelo devuelva solo el texto a enviar. */
+    private static final String INSTRUCCION =
+            "Responde únicamente con el texto del mensaje que se enviará al chat: "
+            + "una o dos frases cortas, sin comillas, sin markdown, sin bloques de código, "
+            + "sin explicaciones y sin repetir el mensaje.";
+
     private static final int RONDAS = 2;
     private static final long ESPERA_ENTRE_RONDAS_MS = 3000;
 
@@ -90,9 +96,13 @@ public class CloudflareRepository {
             throws IOException {
         String cuerpo;
         try {
+            JSONArray mensajes = new JSONArray()
+                    .put(new JSONObject().put("role", "system").put("content", INSTRUCCION))
+                    .put(new JSONObject().put("role", "user").put("content", prompt));
             cuerpo = new JSONObject()
-                    .put("prompt", prompt)
-                    .put("max_tokens", 256)
+                    .put("messages", mensajes)
+                    .put("max_tokens", 150)
+                    .put("temperature", 0.8)
                     .toString();
         } catch (JSONException e) {
             throw new IOException("Error construyendo JSON", e);
