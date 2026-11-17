@@ -15,6 +15,11 @@ public class ResponderUseCase {
         void onResultado(String mensaje);
     }
 
+    /** Se consulta justo antes de enviar: si devuelve false (bot en pausa), no se envía. */
+    public interface Permiso {
+        boolean puedeEnviar();
+    }
+
     private final IaRepository ia;
     private final PromptBuilder promptBuilder;
     private final ChatWriter chatWriter;
@@ -37,7 +42,7 @@ public class ResponderUseCase {
      */
     public void responder(String cfAccount, String cfToken, String geminiKey,
                           String nombreUsuario, String conversacion,
-                          String ultimoMensaje, Callback cb) {
+                          String ultimoMensaje, Permiso permiso, Callback cb) {
         executor.execute(() -> {
             String respuesta;
             try {
@@ -56,8 +61,14 @@ public class ResponderUseCase {
                 return;
             }
 
-            mainHandler.post(() -> chatWriter.escribirYEnviar(texto,
-                    resultado -> cb.onResultado("Respondió " + proveedor + ": " + resultado)));
+            mainHandler.post(() -> {
+                if (!permiso.puedeEnviar()) {
+                    cb.onResultado("En pausa: no se envió la respuesta.");
+                    return;
+                }
+                chatWriter.escribirYEnviar(texto,
+                        resultado -> cb.onResultado("Respondió " + proveedor + ": " + resultado));
+            });
         });
     }
 
