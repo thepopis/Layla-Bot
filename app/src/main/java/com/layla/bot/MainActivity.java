@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -248,12 +249,29 @@ public class MainActivity extends AppCompatActivity {
         return texto.substring(desde, hasta).trim();
     }
 
+    /** Burbuja de chat dibujada por código (no depende de archivos drawable). */
     private void agregarBurbuja(String texto, boolean mio) {
         TextView t = new TextView(this);
         t.setText(texto);
         t.setTextSize(14);
         t.setTextColor(mio ? Color.WHITE : 0xFF1F2933);
-        t.setBackgroundResource(mio ? R.drawable.bg_bubble_yo : R.drawable.bg_card);
+
+        GradientDrawable fondo = new GradientDrawable();
+        fondo.setColor(mio ? 0xFF4C8DF6 : 0xFFFFFFFF);
+        float grande = dp(18);
+        float chico = dp(4);
+        if (mio) {
+            // Esquina inferior derecha casi recta
+            fondo.setCornerRadii(new float[]{grande, grande, grande, grande,
+                    chico, chico, grande, grande});
+        } else {
+            // Esquina inferior izquierda casi recta
+            fondo.setCornerRadii(new float[]{grande, grande, grande, grande,
+                    grande, grande, chico, chico});
+            fondo.setStroke(dp(1), 0xFFE1E7EE);
+        }
+        t.setBackground(fondo);
+
         t.setPadding(dp(14), dp(10), dp(14), dp(10));
         t.setMaxWidth(dp(260));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
