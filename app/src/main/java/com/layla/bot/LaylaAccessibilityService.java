@@ -3,6 +3,7 @@ package com.layla.bot;
 import android.accessibilityservice.AccessibilityService;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -16,8 +17,15 @@ import com.layla.bot.service.BotState;
 import com.layla.bot.service.LecturaUseCase;
 import com.layla.bot.service.SiguienteChatUseCase;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 public class LaylaAccessibilityService extends AccessibilityService {
     private static final String TAG = "LaylaBot";
+
+    /** Aunque lleguen eventos sin parar, se lee como mínimo cada tantos milisegundos. */
+    private static final long MAX_ESPERA_MS = 3000;
 
     private static LaylaAccessibilityService instance;
 
@@ -27,6 +35,10 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private BotState state;
     private LecturaUseCase lecturaUseCase;
     private SiguienteChatUseCase siguienteChatUseCase;
+
+    private long primerEventoPendiente = 0;
+    private int eventos = 0;
+    private int lecturas = 0;
 
     private final Runnable leer = () -> leerPantalla();
 
@@ -39,7 +51,10 @@ public class LaylaAccessibilityService extends AccessibilityService {
         chatWriter = new ChatWriter(this, handler);
         lecturaUseCase = new LecturaUseCase(new ChatParser(), state);
         siguienteChatUseCase = new SiguienteChatUseCase(new ChatParser(), state);
+        eventos = 0;
+        lecturas = 0;
         state.marcarServicioActivo(true);
+        state.setDiagnostico("esperando eventos de Layla");
     }
 
     @Override
@@ -53,8 +68,18 @@ public class LaylaAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || event.getPackageName() == null) return;
         if (!Config.LAYLA_PKG.equals(event.getPackageName().toString())) return;
+
+        eventos++;
+        long ahora = SystemClock.uptimeMillis();
+        if (primerEventoPendiente == 0) primerEventoPendiente = ahora;
+
+        // Si ya llevamos mucho esperando, leer ya en vez de seguir aplazando.
+        long espera = (ahora - primerEventoPendiente >= MAX_ESPERA_MS)
+                ? 0
+                : Config.DEBOUNCE_MS;
+
         handler.removeCallbacks(leer);
-        handler.postDelayed(leer, Config.DEBOUNCE_MS);
+        handler.postDelayed(leer, espera);
     }
 
     @Override
@@ -107,14 +132,25 @@ public class LaylaAccessibilityService extends AccessibilityService {
     }
 
     private void leerPantalla() {
+        primerEventoPendiente = 0;
         AccessibilityNodeInfo root = null;
         try {
             root = getRootInActiveWindow();
-            if (root == null) return;
-            if (!Config.LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) return;
+            if (root == null) {
+                diagnostico("sin ventana activa");
+                return;
+            }
+            if (!Config.LAYLA_PKG.equals(String.valueOf(root.getPackageName()))) {
+                diagnostico("la ventana activa no es Layla");
+                return;
+            }
 
+            lecturas++;
             state.setPantalla(chatReader.volcarPantalla(root));
             String conversacion = chatReader.leerConversacion(root);
+            diagnostico(conversacion == null
+                    ? "lista de chat NO encontrada"
+                    : "lista de chat encontrada");
             lecturaUseCase.procesar(conversacion);
         } catch (Exception e) {
             Log.e(TAG, "Error al leer", e);
@@ -122,5 +158,14 @@ public class LaylaAccessibilityService extends AccessibilityService {
         } finally {
             NodeUtils.recycle(root);
         }
+    }
+
+    /** Guarda cuántos eventos y lecturas van, y la hora, para verlo en el panel. */
+    private void diagnostico(String detalle) {
+        String hora = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+        state.setDiagnostico("eventos de Layla: " + eventos
+                + " · lecturas: " + lecturas
+                + " · " + detalle
+                + " · " + hora);
     }
 }
