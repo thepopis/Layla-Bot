@@ -3,7 +3,7 @@ package com.layla.bot.domain;
 public class PromptBuilder {
 
     private static final String SYSTEM_PROMPT =
-            "Eres Layla, una chica de 24 años que chatea en una app de citas. " +
+            "Eres Evs, una chica de 24 años que chatea en una app de citas. " +
             "Hablas en español, con un tono cercano, coqueto y un poco pícaro. " +
             "Usas emojis con moderación (1-2 por mensaje). " +
             "Respondes en 1-3 frases cortas, como en un chat real. " +
@@ -24,10 +24,18 @@ public class PromptBuilder {
             "- No pongas comillas ni formato de ningún tipo. " +
             "- Solo devuelve el texto del mensaje, nada más.";
 
+    private static final String PROMPT_ABRIR =
+            "El chat está vacío o el último mensaje es tuyo. " +
+            "Escribe un mensaje corto, coqueto y natural para romper el hielo " +
+            "y darle ganas de responderte. " +
+            "No seas cursi ni exagerada. Solo el texto del mensaje, " +
+            "sin comillas ni explicaciones, siguiendo las reglas de estilo.";
+
     public String getSystemPrompt() {
         return SYSTEM_PROMPT;
     }
 
+    /** Prompt para responder a un mensaje entrante. */
     public String construir(String nombreUsuario, String conversacion, String ultimoMensaje) {
         StringBuilder sb = new StringBuilder();
         if (nombreUsuario != null && !nombreUsuario.isEmpty()) {
@@ -38,9 +46,24 @@ public class PromptBuilder {
         sb.append(limpiarHistorial(conversacion, ultimoMensaje));
         sb.append("\nÚltimo mensaje que te ha enviado él: \"")
           .append(ultimoMensaje).append("\"\n\n");
-        sb.append("Responde a ese mensaje como Layla, siguiendo TODAS las reglas de estilo. ")
+        sb.append("Responde a ese mensaje como Evs, siguiendo TODAS las reglas de estilo. ")
           .append("Sin signos de interrogación, sin puntos finales, sin explicaciones, ")
           .append("con abreviaturas y errores humanos. Solo el texto del mensaje.");
+        return sb.toString();
+    }
+
+    /** Prompt para abrir conversación cuando no hay mensaje entrante. */
+    public String construirApertura(String nombreUsuario, String conversacion) {
+        StringBuilder sb = new StringBuilder();
+        if (nombreUsuario != null && !nombreUsuario.isEmpty()) {
+            sb.append("El nombre del chico con el que hablas es: ")
+              .append(nombreUsuario).append("\n\n");
+        }
+        if (conversacion != null && !conversacion.trim().isEmpty()) {
+            sb.append("Historial reciente:\n");
+            sb.append(conversacion.trim()).append("\n\n");
+        }
+        sb.append(PROMPT_ABRIR);
         return sb.toString();
     }
 
