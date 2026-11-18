@@ -51,22 +51,44 @@ public class ResponderUseCase {
                 mainHandler.post(() -> cb.onResultado(error));
                 return;
             }
+            enviarRespuesta(respuesta, permiso, cb);
+        });
+    }
 
-            final String texto = limpiar(respuesta);
-            final String proveedor = ia.getUltimoProveedor();
-            if (texto.isEmpty()) {
-                mainHandler.post(() -> cb.onResultado("La IA devolvió una respuesta vacía."));
+    /** Genera un mensaje de apertura cuando el chat está vacío o el último es mío. */
+    public void abrirConversacion(String cfAccount, String cfToken, String geminiKey,
+                                   String nombreUsuario, String conversacion,
+                                   Permiso permiso, Callback cb) {
+        executor.execute(() -> {
+            String respuesta;
+            try {
+                String systemPrompt = promptBuilder.getSystemPrompt();
+                String mensaje = promptBuilder.construirApertura(nombreUsuario, conversacion);
+                respuesta = ia.generar(cfAccount, cfToken, geminiKey, systemPrompt, mensaje);
+            } catch (Exception e) {
+                final String error = "Error IA (apertura): " + e.getMessage();
+                mainHandler.post(() -> cb.onResultado(error));
                 return;
             }
+            enviarRespuesta(respuesta, permiso, cb);
+        });
+    }
 
-            mainHandler.post(() -> {
-                if (!permiso.puedeEnviar()) {
-                    cb.onResultado("En pausa: no se envió la respuesta.");
-                    return;
-                }
-                chatWriter.escribirYEnviar(texto,
-                        resultado -> cb.onResultado("Respondió " + proveedor + ": " + resultado));
-            });
+    private void enviarRespuesta(String respuesta, Permiso permiso, Callback cb) {
+        final String texto = limpiar(respuesta);
+        final String proveedor = ia.getUltimoProveedor();
+        if (texto.isEmpty()) {
+            mainHandler.post(() -> cb.onResultado("La IA devolvió una respuesta vacía."));
+            return;
+        }
+
+        mainHandler.post(() -> {
+            if (!permiso.puedeEnviar()) {
+                cb.onResultado("En pausa: no se envió la respuesta.");
+                return;
+            }
+            chatWriter.escribirYEnviar(texto,
+                    resultado -> cb.onResultado("Respondió " + proveedor + ": " + resultado));
         });
     }
 
@@ -74,7 +96,6 @@ public class ResponderUseCase {
         if (respuesta == null) return "";
         String t = respuesta.trim();
 
-        // Quitar bloques de código si el modelo los mete
         int bloque = t.indexOf("```");
         if (bloque >= 0) {
             String antes = t.substring(0, bloque).trim();
@@ -90,30 +111,25 @@ public class ResponderUseCase {
             }
         }
 
-        // Solo el primer párrafo
         int parrafo = t.indexOf("\n\n");
         if (parrafo > 0) t = t.substring(0, parrafo).trim();
 
-        // Quitar prefijo "Layla:"
         if (t.startsWith("Layla:")) t = t.substring(6).trim();
+        if (t.startsWith("Evs:")) t = t.substring(4).trim();
 
-        // Quitar comillas envolventes
         boolean comillasRectas = t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"");
         boolean comillasCurvas = t.length() >= 2 && t.startsWith("“") && t.endsWith("”");
         if (comillasRectas || comillasCurvas) {
             t = t.substring(1, t.length() - 1).trim();
         }
 
-        // Eliminar signos de interrogación (apertura y cierre)
         t = t.replace("¿", "").replace("?", "");
 
-        // Eliminar puntos, comas, exclamaciones y puntos suspensivos del final
         while (t.endsWith(".") || t.endsWith(",") || t.endsWith(" ")
                 || t.endsWith("!") || t.endsWith("…")) {
             t = t.substring(0, t.length() - 1).trim();
         }
 
-        // Límite de largo, cortando en un espacio para no partir palabras
         if (t.length() > LARGO_MAXIMO) {
             t = t.substring(0, LARGO_MAXIMO);
             int espacio = t.lastIndexOf(' ');
