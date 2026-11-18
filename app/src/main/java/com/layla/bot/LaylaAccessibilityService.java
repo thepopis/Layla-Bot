@@ -105,7 +105,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
         datasetRecorder = new DatasetRecorder(this);
         autoResponderUseCase = new AutoResponderUseCase(
                 chatReader, chatWriter, chatParser, responderUseCase,
-                datasetRecorder, handler, iaRepository);
+                datasetRecorder, iaRepository);
 
         eventos = 0;
         lecturas = 0;
@@ -289,7 +289,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
             burbuja.setTextColor(Color.WHITE);
             burbuja.setTextSize(12);
             burbuja.setTypeface(Typeface.DEFAULT_BOLD);
-            burbuja.setContentDescription("Botón del bot de Layla");
+            burbuja.setContentDescription("Botón del bot de Evs");
 
             burbujaParams = new WindowManager.LayoutParams(
                     tam, tam,
