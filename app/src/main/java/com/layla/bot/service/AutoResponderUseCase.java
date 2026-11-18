@@ -1,25 +1,15 @@
 package com.layla.bot.service;
 
-import android.os.Handler;
 import android.util.Log;
 
 import com.layla.bot.accessibility.ChatReader;
 import com.layla.bot.accessibility.ChatWriter;
 import com.layla.bot.data.IaRepository;
 import com.layla.bot.domain.ChatParser;
-import com.layla.bot.domain.PromptBuilder;
 import com.layla.bot.domain.model.Mensaje;
 
 import java.util.List;
 
-/**
- * Orquesta el flujo completo:
- * 1. Lee la conversación.
- * 2. Si el último mensaje es de ELLOS, pide respuesta a la IA.
- * 3. Envía la respuesta y guarda el par en el dataset.
- * 4. Espera N segundos a ver si responden.
- * 5. Si no responden, salta al siguiente chat.
- */
 public class AutoResponderUseCase {
 
     private static final String TAG = "AutoResponder";
@@ -28,12 +18,14 @@ public class AutoResponderUseCase {
         void onEstado(String mensaje);
     }
 
+    /** Tiempo mínimo entre dos intentos de apertura en el mismo chat. */
+    private static final long INTERVALO_APERTURA_MS = 60000;
+
     private final ChatReader chatReader;
     private final ChatWriter chatWriter;
     private final ChatParser chatParser;
     private final ResponderUseCase responderUseCase;
     private final DatasetRecorder datasetRecorder;
-    private final Handler handler;
     private final IaRepository iaRepository;
 
     private volatile boolean esperandoRespuesta = false;
@@ -41,51 +33,54 @@ public class AutoResponderUseCase {
     private volatile String ultimaClave = null;
     private volatile String ultimoMensajeRespondido = null;
 
+    private volatile String chatActual = null;
+    private volatile long ultimaAperturaMs = 0;
+    private volatile boolean aperturaEnviadaParaChatActual = false;
+
     public AutoResponderUseCase(ChatReader chatReader,
                                 ChatWriter chatWriter,
                                 ChatParser chatParser,
                                 ResponderUseCase responderUseCase,
                                 DatasetRecorder datasetRecorder,
-                                Handler handler,
                                 IaRepository iaRepository) {
         this.chatReader = chatReader;
         this.chatWriter = chatWriter;
         this.chatParser = chatParser;
         this.responderUseCase = responderUseCase;
         this.datasetRecorder = datasetRecorder;
-        this.handler = handler;
         this.iaRepository = iaRepository;
     }
 
-    /**
-     * Punto de entrada: se llama cada vez que se lee la pantalla.
-     * Recibe la conversación ya leída y el nombre del usuario.
-     */
     public void procesar(String conversacion, String nombreUsuario,
                          String cfAccount, String cfToken, String geminiKey,
                          Callback cb) {
-        if (conversacion == null || conversacion.isEmpty()) {
-            cb.onEstado("No hay conversación abierta.");
-            return;
+        if (conversacion == null) conversacion = "";
+
+        // Detectar si cambiamos de chat (por el nombre del usuario)
+        String chatId = nombreUsuario != null ? nombreUsuario : "";
+        if (!chatId.equals(chatActual)) {
+            chatActual = chatId;
+            aperturaEnviadaParaChatActual = false;
+            ultimaAperturaMs = 0;
+            ultimaClave = null;
+            ultimoMensajeRespondido = null;
+            esperandoRespuesta = false;
+            cb.onEstado("Nuevo chat detectado: " + chatId);
         }
 
         List<Mensaje> mensajes = chatParser.parsear(conversacion);
-        if (mensajes.isEmpty()) {
-            cb.onEstado("Conversación vacía.");
-            return;
-        }
 
-        Mensaje ultimo = mensajes.get(mensajes.size() - 1);
-
-        // Si estamos esperando respuesta y el usuario ya respondió
+        // ---- 1. Estamos esperando respuesta ----
         if (esperandoRespuesta) {
-            if (ultimo.esEntrante() && !ultimo.getTexto().equals(ultimoMensajeRespondido)) {
-                // ¡Respondió! Cancelar el salto y procesar nuevo mensaje
+            Mensaje ultimo = mensajes.isEmpty() ? null : mensajes.get(mensajes.size() - 1);
+            boolean respondio = ultimo != null && ultimo.esEntrante()
+                    && !ultimo.getTexto().equals(ultimoMensajeRespondido);
+
+            if (respondio) {
                 esperandoRespuesta = false;
                 cb.onEstado("El usuario respondió. Procesando...");
-                // Caer al flujo normal
+                // Cae al flujo normal
             } else if (System.currentTimeMillis() - inicioEspera > 15000) {
-                // No respondió en 15s → saltar
                 esperandoRespuesta = false;
                 cb.onEstado("Sin respuesta en 15s. Saltando al siguiente chat...");
                 chatWriter.pulsarSiguienteChat(resultado ->
@@ -98,20 +93,45 @@ public class AutoResponderUseCase {
             }
         }
 
-        // Si el último mensaje no es de ELLOS, no hay nada que responder
-        if (!ultimo.esEntrante()) {
-            cb.onEstado("El último mensaje es mío. Esperando al otro...");
+        // ---- 2. Sin mensajes o último es mío → apertura proactiva ----
+        Mensaje ultimo = mensajes.isEmpty() ? null : mensajes.get(mensajes.size() - 1);
+        if (ultimo == null || !ultimo.esEntrante()) {
+            // Si ya enviamos apertura en este chat, esperar
+            if (aperturaEnviadaParaChatActual) {
+                cb.onEstado("Apertura ya enviada en este chat. Esperando al usuario...");
+                return;
+            }
+            // Si pasó muy poco desde la última apertura, no spamear
+            if (System.currentTimeMillis() - ultimaAperturaMs < INTERVALO_APERTURA_MS) {
+                cb.onEstado("Esperando antes de otra apertura...");
+                return;
+            }
+
+            aperturaEnviadaParaChatActual = true;
+            ultimaAperturaMs = System.currentTimeMillis();
+            cb.onEstado("Generando mensaje de apertura...");
+
+            final String historial = conversacion;
+            responderUseCase.abrirConversacion(cfAccount, cfToken, geminiKey,
+                    nombreUsuario, conversacion,
+                    () -> true,
+                    resultado -> {
+                        cb.onEstado("Apertura: " + resultado);
+                        String proveedor = iaRepository.getUltimoProveedor();
+                        datasetRecorder.guardar("(apertura)", resultado, nombreUsuario, proveedor);
+                        esperandoRespuesta = true;
+                        inicioEspera = System.currentTimeMillis();
+                    });
             return;
         }
 
-        // Evitar responder dos veces al mismo mensaje
+        // ---- 3. Último mensaje es de ELLOS → responder ----
         String clave = mensajes.size() + "|" + ultimo.getTexto();
         if (clave.equals(ultimaClave)) {
             cb.onEstado("Ya respondí a este mensaje.");
             return;
         }
 
-        // Hay mensaje nuevo: responder
         ultimaClave = clave;
         ultimoMensajeRespondido = ultimo.getTexto();
         cb.onEstado("Generando respuesta para: " + ultimo.getTexto());
@@ -121,16 +141,10 @@ public class AutoResponderUseCase {
                 () -> true,
                 resultado -> {
                     cb.onEstado("IA respondió: " + resultado);
-                    // Guardar en dataset
                     String proveedor = iaRepository.getUltimoProveedor();
-                    // El resultado es algo como "Respondió Gemini: click=..., enviado=true"
-                    // No tenemos el texto exacto aquí, así que guardamos lo que podemos
                     datasetRecorder.guardar(ultimo.getTexto(), resultado, nombreUsuario, proveedor);
-
-                    // Empezar a esperar respuesta
                     esperandoRespuesta = true;
                     inicioEspera = System.currentTimeMillis();
-                    cb.onEstado("Respuesta enviada. Esperando 15s...");
                 });
     }
 
@@ -143,5 +157,8 @@ public class AutoResponderUseCase {
         inicioEspera = 0;
         ultimaClave = null;
         ultimoMensajeRespondido = null;
+        chatActual = null;
+        ultimaAperturaMs = 0;
+        aperturaEnviadaParaChatActual = false;
     }
 }
