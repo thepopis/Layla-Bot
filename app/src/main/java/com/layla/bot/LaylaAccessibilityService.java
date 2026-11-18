@@ -30,7 +30,9 @@ import com.layla.bot.data.IaRepository;
 import com.layla.bot.domain.ChatParser;
 import com.layla.bot.domain.PromptBuilder;
 import com.layla.bot.domain.model.Mensaje;
+import com.layla.bot.service.AutoResponderUseCase;
 import com.layla.bot.service.BotState;
+import com.layla.bot.service.DatasetRecorder;
 import com.layla.bot.service.LecturaUseCase;
 import com.layla.bot.service.ResponderUseCase;
 import com.layla.bot.service.SiguienteChatUseCase;
@@ -43,11 +45,7 @@ import java.util.Locale;
 public class LaylaAccessibilityService extends AccessibilityService {
     private static final String TAG = "LaylaBot";
 
-    /** Aunque lleguen eventos sin parar, se lee como mínimo cada tantos milisegundos. */
     private static final long MAX_ESPERA_MS = 3000;
-    /** Si una respuesta tarda más que esto, se asume que se colgó y se libera el bot. */
-    private static final long MAX_RESPONDIENDO_MS = 90000;
-    /** Mantener pulsada la burbuja este tiempo abre el panel. */
     private static final long PULSACION_LARGA_MS = 700;
 
     private static LaylaAccessibilityService instance;
@@ -61,14 +59,14 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private LecturaUseCase lecturaUseCase;
     private SiguienteChatUseCase siguienteChatUseCase;
     private ResponderUseCase responderUseCase;
+    private DatasetRecorder datasetRecorder;
+    private AutoResponderUseCase autoResponderUseCase;
+    private IaRepository iaRepository;
 
     private long primerEventoPendiente = 0;
     private int eventos = 0;
     private int lecturas = 0;
 
-    private volatile boolean respondiendo = false;
-    private long inicioRespuesta = 0;
-    private String ultimaClave = null;
     private String ultimaAccion = "-";
 
     // Burbuja flotante
@@ -76,12 +74,12 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private TextView burbuja;
     private WindowManager.LayoutParams burbujaParams;
 
-    /** Si cambia el interruptor (desde la burbuja o desde la app), actualiza la burbuja. */
     private final SharedPreferences.OnSharedPreferenceChangeListener alCambiarPrefs =
             (sp, clave) -> {
                 if ("auto_activo".equals(clave)) {
-                    // Al encender, puede responder lo que haya pendiente en el chat abierto.
-                    if (sp.getBoolean("auto_activo", false)) ultimaClave = null;
+                    if (sp.getBoolean("auto_activo", false) && autoResponderUseCase != null) {
+                        autoResponderUseCase.reset();
+                    }
                     actualizarBurbuja();
                 }
             };
@@ -101,12 +99,16 @@ public class LaylaAccessibilityService extends AccessibilityService {
         chatParser = new ChatParser();
         lecturaUseCase = new LecturaUseCase(chatParser, state);
         siguienteChatUseCase = new SiguienteChatUseCase(new ChatParser(), state);
+        iaRepository = new IaRepository();
         responderUseCase = new ResponderUseCase(
-                new IaRepository(), new PromptBuilder(), chatWriter, handler);
+                iaRepository, new PromptBuilder(), chatWriter, handler);
+        datasetRecorder = new DatasetRecorder(this);
+        autoResponderUseCase = new AutoResponderUseCase(
+                chatReader, chatWriter, chatParser, responderUseCase,
+                datasetRecorder, handler, iaRepository);
+
         eventos = 0;
         lecturas = 0;
-        respondiendo = false;
-        ultimaClave = null;
         ultimaAccion = "-";
         state.marcarServicioActivo(true);
         state.setDiagnostico("esperando eventos de Layla");
@@ -138,7 +140,6 @@ public class LaylaAccessibilityService extends AccessibilityService {
         long ahora = SystemClock.uptimeMillis();
         if (primerEventoPendiente == 0) primerEventoPendiente = ahora;
 
-        // Si ya llevamos mucho esperando, leer ya en vez de seguir aplazando.
         long espera = (ahora - primerEventoPendiente >= MAX_ESPERA_MS)
                 ? 0
                 : Config.DEBOUNCE_MS;
@@ -196,6 +197,13 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }, Config.DELAY_PRUEBA_MS);
     }
 
+    /** Reinicia el estado del auto-respondedor (se llama desde MainActivity al activar). */
+    public static void reiniciarAutoResponder() {
+        if (instance != null && instance.autoResponderUseCase != null) {
+            instance.autoResponderUseCase.reset();
+        }
+    }
+
     private void leerPantalla() {
         primerEventoPendiente = 0;
         AccessibilityNodeInfo root = null;
@@ -227,55 +235,24 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** Si el bot está encendido y EL escribió último, pide la respuesta a la IA. */
+    /** Delega al AutoResponderUseCase: él decide si responder, esperar o saltar. */
     private void intentarResponder(AccessibilityNodeInfo root, String conversacion) {
         if (!prefs.getBoolean("auto_activo", false)) return;
-        if (conversacion == null || conversacion.isEmpty()) return;
+        if (autoResponderUseCase == null) return;
 
-        if (respondiendo) {
-            // Salvavidas: si lleva demasiado tiempo, liberar para no quedarse bloqueado.
-            if (SystemClock.uptimeMillis() - inicioRespuesta < MAX_RESPONDIENDO_MS) return;
-            respondiendo = false;
-            actualizarBurbuja();
-        }
-
-        List<Mensaje> mensajes = chatParser.parsear(conversacion);
-        if (mensajes.isEmpty()) return;
-        Mensaje ultimo = mensajes.get(mensajes.size() - 1);
-        if (!ultimo.esEntrante()) return; // el último mensaje es tuyo: nada que responder
-
-        // Evita responder dos veces al mismo mensaje (incluso si el envío falló).
-        String clave = mensajes.size() + "|" + ultimo.getTexto();
-        if (clave.equals(ultimaClave)) return;
-
+        String nombre = leerNombre(root);
         String cuenta = prefs.getString("cf_account", "");
         String token = prefs.getString("cf_token", "");
         String gemini = prefs.getString("gemini_key", "");
-        boolean hayCloudflare = !cuenta.isEmpty() && !token.isEmpty();
-        if (!hayCloudflare && gemini.isEmpty()) {
-            ultimaAccion = "faltan las claves de la IA";
-            return;
-        }
 
-        ultimaClave = clave;
-        respondiendo = true;
-        inicioRespuesta = SystemClock.uptimeMillis();
-        ultimaAccion = "generando respuesta...";
-        actualizarBurbuja();
-
-        String nombre = leerNombre(root);
-        responderUseCase.responder(cuenta, token, gemini, nombre, conversacion,
-                ultimo.getTexto(),
-                () -> prefs.getBoolean("auto_activo", false),
-                resultado -> {
-                    respondiendo = false;
-                    ultimaAccion = resultado;
+        autoResponderUseCase.procesar(conversacion, nombre, cuenta, token, gemini,
+                mensaje -> {
+                    ultimaAccion = mensaje;
                     actualizarBurbuja();
-                    diagnostico("acción del bot");
+                    diagnostico("auto");
                 });
     }
 
-    /** Nombre del chico que aparece arriba del chat (vacío si no se encuentra). */
     private String leerNombre(AccessibilityNodeInfo root) {
         List<AccessibilityNodeInfo> nodos =
                 root.findAccessibilityNodeInfosByViewId(Config.LAYLA_PKG + ":id/tv_nickname");
@@ -288,10 +265,9 @@ public class LaylaAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** Guarda cuántos eventos y lecturas van, qué hizo el bot y la hora, para verlo en el panel. */
     private void diagnostico(String detalle) {
         String hora = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-        state.setDiagnostico("eventos de Layla: " + eventos
+        state.setDiagnostico("eventos: " + eventos
                 + " · lecturas: " + lecturas
                 + " · " + detalle
                 + " · bot: " + ultimaAccion
@@ -396,16 +372,18 @@ public class LaylaAccessibilityService extends AccessibilityService {
         burbuja = null;
     }
 
-    /** Verde ON = respondiendo solo · ámbar ··· = generando · gris OFF = en pausa. */
     private void actualizarBurbuja() {
         if (burbuja == null) return;
         boolean activo = prefs.getBoolean("auto_activo", false);
+        boolean esperando = autoResponderUseCase != null
+                && autoResponderUseCase.isEsperandoRespuesta();
+
         int color;
         String texto;
         if (!activo) {
             color = 0xFF6B7785;
             texto = "OFF";
-        } else if (respondiendo) {
+        } else if (esperando) {
             color = 0xFFF59E0B;
             texto = "···";
         } else {
@@ -425,6 +403,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
         boolean nuevo = !prefs.getBoolean("auto_activo", false);
         prefs.edit().putBoolean("auto_activo", nuevo).apply();
         Toast.makeText(this, nuevo ? "Bot ACTIVADO" : "Bot en pausa", Toast.LENGTH_SHORT).show();
+        if (nuevo && autoResponderUseCase != null) autoResponderUseCase.reset();
         actualizarBurbuja();
     }
 
