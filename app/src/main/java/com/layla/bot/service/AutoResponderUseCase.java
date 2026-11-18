@@ -1,7 +1,5 @@
 package com.layla.bot.service;
 
-import android.util.Log;
-
 import com.layla.bot.accessibility.ChatReader;
 import com.layla.bot.accessibility.ChatWriter;
 import com.layla.bot.data.IaRepository;
@@ -11,8 +9,6 @@ import com.layla.bot.domain.model.Mensaje;
 import java.util.List;
 
 public class AutoResponderUseCase {
-
-    private static final String TAG = "AutoResponder";
 
     public interface Callback {
         void onEstado(String mensaje);
@@ -56,7 +52,6 @@ public class AutoResponderUseCase {
                          Callback cb) {
         if (conversacion == null) conversacion = "";
 
-        // Detectar si cambiamos de chat (por el nombre del usuario)
         String chatId = nombreUsuario != null ? nombreUsuario : "";
         if (!chatId.equals(chatActual)) {
             chatActual = chatId;
@@ -79,7 +74,6 @@ public class AutoResponderUseCase {
             if (respondio) {
                 esperandoRespuesta = false;
                 cb.onEstado("El usuario respondió. Procesando...");
-                // Cae al flujo normal
             } else if (System.currentTimeMillis() - inicioEspera > 15000) {
                 esperandoRespuesta = false;
                 cb.onEstado("Sin respuesta en 15s. Saltando al siguiente chat...");
@@ -96,12 +90,10 @@ public class AutoResponderUseCase {
         // ---- 2. Sin mensajes o último es mío → apertura proactiva ----
         Mensaje ultimo = mensajes.isEmpty() ? null : mensajes.get(mensajes.size() - 1);
         if (ultimo == null || !ultimo.esEntrante()) {
-            // Si ya enviamos apertura en este chat, esperar
             if (aperturaEnviadaParaChatActual) {
                 cb.onEstado("Apertura ya enviada en este chat. Esperando al usuario...");
                 return;
             }
-            // Si pasó muy poco desde la última apertura, no spamear
             if (System.currentTimeMillis() - ultimaAperturaMs < INTERVALO_APERTURA_MS) {
                 cb.onEstado("Esperando antes de otra apertura...");
                 return;
@@ -111,7 +103,6 @@ public class AutoResponderUseCase {
             ultimaAperturaMs = System.currentTimeMillis();
             cb.onEstado("Generando mensaje de apertura...");
 
-            final String historial = conversacion;
             responderUseCase.abrirConversacion(cfAccount, cfToken, geminiKey,
                     nombreUsuario, conversacion,
                     () -> true,
