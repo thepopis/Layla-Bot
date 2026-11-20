@@ -19,12 +19,6 @@ import android.widget.Toast;
 
 import com.layla.bot.MainActivity;
 
-/**
- * Burbuja flotante que muestra el estado del bot y permite:
- * - Tap: encender/apagar el bot
- * - Long-press: abrir el panel
- * - Arrastrar: moverla de sitio
- */
 public class BubbleOverlay {
 
     private static final String TAG = "BubbleOverlay";
@@ -50,6 +44,7 @@ public class BubbleOverlay {
 
     public void crear() {
         if (burbuja != null) return;
+        Log.d(TAG, "crear() llamado");
         try {
             windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
             int tam = dp(54);
@@ -74,6 +69,7 @@ public class BubbleOverlay {
             configurarTouch();
             windowManager.addView(burbuja, params);
             actualizar(prefs.getBoolean("auto_activo", false), false);
+            Log.d(TAG, "Burbuja creada correctamente");
         } catch (Exception e) {
             Log.e(TAG, "No se pudo crear la burbuja", e);
             burbuja = null;
@@ -91,7 +87,6 @@ public class BubbleOverlay {
         burbuja = null;
     }
 
-    /** Actualiza el color y el texto según el estado del bot. */
     public void actualizar(boolean activo, boolean esperando) {
         if (burbuja == null) return;
         int color;
