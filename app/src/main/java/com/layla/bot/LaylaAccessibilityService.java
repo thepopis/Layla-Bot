@@ -71,36 +71,45 @@ public class LaylaAccessibilityService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        instance = this;
-        prefs = getSharedPreferences("layla_prefs", Context.MODE_PRIVATE);
-        prefs.registerOnSharedPreferenceChangeListener(alCambiarPrefs);
+        try {
+            instance = this;
+            prefs = getSharedPreferences("layla_prefs", Context.MODE_PRIVATE);
+            prefs.registerOnSharedPreferenceChangeListener(alCambiarPrefs);
 
-        state = new BotState(this);
-        chatReader = new ChatReader();
-        chatWriter = new ChatWriter(this, handler);
-        chatParser = new ChatParser();
-        lecturaUseCase = new LecturaUseCase(chatParser, state);
-        siguienteChatUseCase = new SiguienteChatUseCase(new ChatParser(), state);
-        iaRepository = new IaRepository();
-        responderUseCase = new ResponderUseCase(
-                iaRepository, new PromptBuilder(), chatWriter, handler);
-        datasetRecorder = new DatasetRecorder(this);
-        autoResponderUseCase = new AutoResponderUseCase(
-                chatReader, chatWriter, chatParser, responderUseCase,
-                datasetRecorder, iaRepository);
+            state = new BotState(this);
+            chatReader = new ChatReader();
+            chatWriter = new ChatWriter(this, handler);
+            chatParser = new ChatParser();
+            lecturaUseCase = new LecturaUseCase(chatParser, state);
+            siguienteChatUseCase = new SiguienteChatUseCase(new ChatParser(), state);
+            iaRepository = new IaRepository();
+            responderUseCase = new ResponderUseCase(
+                    iaRepository, new PromptBuilder(), chatWriter, handler);
+            datasetRecorder = new DatasetRecorder(this);
+            autoResponderUseCase = new AutoResponderUseCase(
+                    chatReader, chatWriter, chatParser, responderUseCase,
+                    datasetRecorder, iaRepository);
 
-        bubbleOverlay = new BubbleOverlay(this, prefs, activo -> {
-            if (activo && autoResponderUseCase != null) autoResponderUseCase.reset();
-            actualizarBurbuja();
-        });
+            bubbleOverlay = new BubbleOverlay(this, prefs, activo -> {
+                if (activo && autoResponderUseCase != null) autoResponderUseCase.reset();
+                actualizarBurbuja();
+            });
 
-        eventos = 0;
-        lecturas = 0;
-        ultimaAccion = "-";
-        state.marcarServicioActivo(true);
-        state.setDiagnostico("esperando eventos de Layla");
+            eventos = 0;
+            lecturas = 0;
+            ultimaAccion = "-";
+            state.marcarServicioActivo(true);
+            state.setDiagnostico("esperando eventos de Layla");
 
-        bubbleOverlay.crear();
+            // Pequeña espera para que WindowManager esté listo antes de añadir la vista
+            handler.postDelayed(() -> {
+                if (bubbleOverlay != null) bubbleOverlay.crear();
+            }, 500);
+
+            Log.d(TAG, "onServiceConnected completado");
+        } catch (Exception e) {
+            Log.e(TAG, "Error fatal en onServiceConnected", e);
+        }
     }
 
     @Override
@@ -147,7 +156,10 @@ public class LaylaAccessibilityService extends AccessibilityService {
 
     public static void programarPruebaEscritura() {
         final LaylaAccessibilityService s = instance;
-        if (s == null || s.state == null) return;
+        if (s == null || s.state == null) {
+            Log.w(TAG, "programarPruebaEscritura: servicio no activo");
+            return;
+        }
         s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
         s.handler.postDelayed(
@@ -158,7 +170,10 @@ public class LaylaAccessibilityService extends AccessibilityService {
 
     public static void programarPruebaSiguienteChat() {
         final LaylaAccessibilityService s = instance;
-        if (s == null || s.state == null) return;
+        if (s == null || s.state == null) {
+            Log.w(TAG, "programarPruebaSiguienteChat: servicio no activo");
+            return;
+        }
         s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
         s.handler.postDelayed(() -> {
@@ -190,6 +205,10 @@ public class LaylaAccessibilityService extends AccessibilityService {
         if (instance != null && instance.autoResponderUseCase != null) {
             instance.autoResponderUseCase.reset();
         }
+    }
+
+    public static boolean servicioActivo() {
+        return instance != null;
     }
 
     // ---------- Lógica de lectura ----------
