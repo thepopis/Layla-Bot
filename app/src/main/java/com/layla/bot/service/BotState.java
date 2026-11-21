@@ -12,7 +12,7 @@ public class BotState {
     private static final String K_ULTIMO = "ultimo_entrante";
     private static final String K_CONV = "conversacion";
     private static final String K_PANTALLA = "pantalla";
-    private static final String K_ERROR = "error_fatal";
+    private static final String K_ERROR_BURBUJA = "error_burbuja";
     private static final String K_DIAGNOSTICO = "diagnostico";
 
     private final SharedPreferences prefs;
@@ -31,43 +31,25 @@ public class BotState {
                 .apply();
     }
 
-    public void setEstado(String estado) {
-        prefs.edit().putString(K_ESTADO, estado).apply();
-    }
-
-    public void setPruebaEstado(String p) {
-        prefs.edit().putString(K_PRUEBA, p).apply();
-    }
-
-    public void setUltimoEntrante(String u) {
-        prefs.edit().putString(K_ULTIMO, u).apply();
-    }
-
-    public void setConversacion(String c) {
-        prefs.edit().putString(K_CONV, c).apply();
-    }
-
-    public void setPantalla(String p) {
-        prefs.edit().putString(K_PANTALLA, p).apply();
-    }
-
-    public void setError(String error) {
-        prefs.edit().putString(K_ERROR, error).apply();
-    }
-
-    public void setDiagnostico(String d) {
-        prefs.edit().putString(K_DIAGNOSTICO, d).apply();
-    }
+    public void setEstado(String estado) { prefs.edit().putString(K_ESTADO, estado).apply(); }
+    public void setPruebaEstado(String p) { prefs.edit().putString(K_PRUEBA, p).apply(); }
+    public void setUltimoEntrante(String u) { prefs.edit().putString(K_ULTIMO, u).apply(); }
+    public void setConversacion(String c) { prefs.edit().putString(K_CONV, c).apply(); }
+    public void setPantalla(String p) { prefs.edit().putString(K_PANTALLA, p).apply(); }
+    public void setDiagnostico(String d) { prefs.edit().putString(K_DIAGNOSTICO, d).apply(); }
+    
+    // NUEVO: Para capturar el error de la burbuja
+    public void setErrorBurbuja(String error) { prefs.edit().putString(K_ERROR_BURBUJA, error).apply(); }
 
     public String informe() {
-        String error = prefs.getString(K_ERROR, "");
-        String avisoError = error.isEmpty() ? "" : "🚨 ERROR FATAL:\n" + error + "\n\n";
+        String errorBurbuja = prefs.getString(K_ERROR_BURBUJA, "");
+        String avisoBurbuja = errorBurbuja.isEmpty() ? "" : "🚨 ERROR EN BURBUJA:\n" + errorBurbuja + "\n\n";
 
         boolean activo = prefs.getBoolean(K_ACTIVO, false);
         String aviso = activo ? ""
                 : "⚠️ El servicio de accesibilidad no está activo. Actívalo en Ajustes.\n\n";
 
-        return avisoError + aviso
+        return avisoBurbuja + aviso
                 + "ESTADO: " + prefs.getString(K_ESTADO, "Aún no se ha leído ninguna pantalla.")
                 + "\nDIAGNÓSTICO: " + prefs.getString(K_DIAGNOSTICO, "")
                 + "\nPRUEBA DE ESCRITURA: " + prefs.getString(K_PRUEBA, "(sin probar)")
