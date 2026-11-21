@@ -27,24 +27,31 @@ public class BubbleOverlay {
     public interface OnToggleListener {
         void onToggle(boolean activo);
     }
+    
+    // NUEVO: Callback para avisar si falla la creación
+    public interface OnErrorListener {
+        void onError(String error);
+    }
 
     private final Context context;
     private final SharedPreferences prefs;
     private final OnToggleListener listener;
+    private final OnErrorListener errorListener;
 
     private WindowManager windowManager;
     private TextView burbuja;
     private WindowManager.LayoutParams params;
 
-    public BubbleOverlay(Context context, SharedPreferences prefs, OnToggleListener listener) {
+    public BubbleOverlay(Context context, SharedPreferences prefs, 
+                         OnToggleListener listener, OnErrorListener errorListener) {
         this.context = context;
         this.prefs = prefs;
         this.listener = listener;
+        this.errorListener = errorListener;
     }
 
     public void crear() {
         if (burbuja != null) return;
-        Log.d(TAG, "crear() llamado");
         try {
             windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
             int tam = dp(54);
@@ -69,9 +76,12 @@ public class BubbleOverlay {
             configurarTouch();
             windowManager.addView(burbuja, params);
             actualizar(prefs.getBoolean("auto_activo", false), false);
-            Log.d(TAG, "Burbuja creada correctamente");
+            
+            if (errorListener != null) errorListener.onError(""); // Limpiar error
         } catch (Exception e) {
-            Log.e(TAG, "No se pudo crear la burbuja", e);
+            String error = e.getClass().getSimpleName() + ": " + e.getMessage();
+            Log.e(TAG, "Error creando burbuja", e);
+            if (errorListener != null) errorListener.onError(error);
             burbuja = null;
         }
     }
@@ -108,10 +118,6 @@ public class BubbleOverlay {
         burbuja.setBackground(fondo);
         burbuja.setText(texto);
         burbuja.setAlpha(0.9f);
-    }
-
-    public boolean estaCreada() {
-        return burbuja != null;
     }
 
     private void configurarTouch() {
