@@ -77,6 +77,8 @@ public class LaylaAccessibilityService extends AccessibilityService {
             prefs.registerOnSharedPreferenceChangeListener(alCambiarPrefs);
 
             state = new BotState(this);
+            state.setErrorBurbuja(""); // Limpiar error previo
+
             chatReader = new ChatReader();
             chatWriter = new ChatWriter(this, handler);
             chatParser = new ChatParser();
@@ -90,10 +92,16 @@ public class LaylaAccessibilityService extends AccessibilityService {
                     chatReader, chatWriter, chatParser, responderUseCase,
                     datasetRecorder, iaRepository);
 
-            bubbleOverlay = new BubbleOverlay(this, prefs, activo -> {
-                if (activo && autoResponderUseCase != null) autoResponderUseCase.reset();
-                actualizarBurbuja();
-            });
+            // Inicializar la burbuja con el listener de error
+            bubbleOverlay = new BubbleOverlay(this, prefs, 
+                activo -> {
+                    if (activo && autoResponderUseCase != null) autoResponderUseCase.reset();
+                    actualizarBurbuja();
+                },
+                error -> {
+                    if (state != null) state.setErrorBurbuja(error);
+                }
+            );
 
             eventos = 0;
             lecturas = 0;
@@ -101,14 +109,16 @@ public class LaylaAccessibilityService extends AccessibilityService {
             state.marcarServicioActivo(true);
             state.setDiagnostico("esperando eventos de Layla");
 
-            // Pequeña espera para que WindowManager esté listo antes de añadir la vista
+            // Intentar crear la burbuja un poco después
             handler.postDelayed(() -> {
                 if (bubbleOverlay != null) bubbleOverlay.crear();
             }, 500);
 
             Log.d(TAG, "onServiceConnected completado");
         } catch (Exception e) {
-            Log.e(TAG, "Error fatal en onServiceConnected", e);
+            String error = "onServiceConnected: " + e.getClass().getSimpleName() + ": " + e.getMessage();
+            Log.e(TAG, error, e);
+            if (state != null) state.setErrorBurbuja(error);
         }
     }
 
@@ -147,8 +157,6 @@ public class LaylaAccessibilityService extends AccessibilityService {
     @Override
     public void onInterrupt() {}
 
-    // ---------- API estática para MainActivity ----------
-
     public static String informe() {
         if (instance == null || instance.state == null) return "Servicio no conectado aún.";
         return instance.state.informe();
@@ -156,10 +164,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
 
     public static void programarPruebaEscritura() {
         final LaylaAccessibilityService s = instance;
-        if (s == null || s.state == null) {
-            Log.w(TAG, "programarPruebaEscritura: servicio no activo");
-            return;
-        }
+        if (s == null || s.state == null) return;
         s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
         s.handler.postDelayed(
@@ -170,10 +175,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
 
     public static void programarPruebaSiguienteChat() {
         final LaylaAccessibilityService s = instance;
-        if (s == null || s.state == null) {
-            Log.w(TAG, "programarPruebaSiguienteChat: servicio no activo");
-            return;
-        }
+        if (s == null || s.state == null) return;
         s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
                 + " segundos... ve a Layla y abre un chat.");
         s.handler.postDelayed(() -> {
@@ -206,12 +208,6 @@ public class LaylaAccessibilityService extends AccessibilityService {
             instance.autoResponderUseCase.reset();
         }
     }
-
-    public static boolean servicioActivo() {
-        return instance != null;
-    }
-
-    // ---------- Lógica de lectura ----------
 
     private void leerPantalla() {
         primerEventoPendiente = 0;
