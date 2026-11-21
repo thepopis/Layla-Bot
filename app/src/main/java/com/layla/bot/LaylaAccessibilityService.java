@@ -23,7 +23,6 @@ import com.layla.bot.service.BotState;
 import com.layla.bot.service.DatasetRecorder;
 import com.layla.bot.service.LecturaUseCase;
 import com.layla.bot.service.ResponderUseCase;
-import com.layla.bot.service.SiguienteChatUseCase;
 import com.layla.bot.ui.BubbleOverlay;
 
 import java.text.SimpleDateFormat;
@@ -44,7 +43,6 @@ public class LaylaAccessibilityService extends AccessibilityService {
     private ChatParser chatParser;
     private BotState state;
     private LecturaUseCase lecturaUseCase;
-    private SiguienteChatUseCase siguienteChatUseCase;
     private ResponderUseCase responderUseCase;
     private DatasetRecorder datasetRecorder;
     private AutoResponderUseCase autoResponderUseCase;
@@ -83,7 +81,6 @@ public class LaylaAccessibilityService extends AccessibilityService {
             chatWriter = new ChatWriter(this, handler);
             chatParser = new ChatParser();
             lecturaUseCase = new LecturaUseCase(chatParser, state);
-            siguienteChatUseCase = new SiguienteChatUseCase(new ChatParser(), state);
             iaRepository = new IaRepository();
             responderUseCase = new ResponderUseCase(
                     iaRepository, new PromptBuilder(), chatWriter, handler);
@@ -93,7 +90,7 @@ public class LaylaAccessibilityService extends AccessibilityService {
                     datasetRecorder, iaRepository);
 
             // Inicializar la burbuja con el listener de error
-            bubbleOverlay = new BubbleOverlay(this, prefs, 
+            bubbleOverlay = new BubbleOverlay(this, prefs,
                 activo -> {
                     if (activo && autoResponderUseCase != null) autoResponderUseCase.reset();
                     actualizarBurbuja();
@@ -160,47 +157,6 @@ public class LaylaAccessibilityService extends AccessibilityService {
     public static String informe() {
         if (instance == null || instance.state == null) return "Servicio no conectado aún.";
         return instance.state.informe();
-    }
-
-    public static void programarPruebaEscritura() {
-        final LaylaAccessibilityService s = instance;
-        if (s == null || s.state == null) return;
-        s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
-                + " segundos... ve a Layla y abre un chat.");
-        s.handler.postDelayed(
-                () -> s.chatWriter.escribirYEnviar("prueba del bot",
-                        resultado -> s.state.setPruebaEstado(resultado)),
-                Config.DELAY_PRUEBA_MS);
-    }
-
-    public static void programarPruebaSiguienteChat() {
-        final LaylaAccessibilityService s = instance;
-        if (s == null || s.state == null) return;
-        s.state.setPruebaEstado("Esperando " + (Config.DELAY_PRUEBA_MS / 1000)
-                + " segundos... ve a Layla y abre un chat.");
-        s.handler.postDelayed(() -> {
-            try {
-                AccessibilityNodeInfo root = s.getRootInActiveWindow();
-                if (root == null) {
-                    s.state.setPruebaEstado("Falló: no hay ventana activa.");
-                    return;
-                }
-                try {
-                    String conversacion = s.chatReader.leerConversacion(root);
-                    boolean debe = s.siguienteChatUseCase.debeSaltar(conversacion);
-                    if (!debe) {
-                        s.state.setPruebaEstado("No salta: el último mensaje no cumple la condición.");
-                        return;
-                    }
-                    s.chatWriter.pulsarSiguienteChat(
-                            resultado -> s.state.setPruebaEstado(resultado));
-                } finally {
-                    NodeUtils.recycle(root);
-                }
-            } catch (Exception e) {
-                s.state.setPruebaEstado("Excepción: " + e);
-            }
-        }, Config.DELAY_PRUEBA_MS);
     }
 
     public static void reiniciarAutoResponder() {
