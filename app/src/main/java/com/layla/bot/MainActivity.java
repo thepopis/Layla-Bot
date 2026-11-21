@@ -77,8 +77,6 @@ public class MainActivity extends AppCompatActivity {
         Button actualizar = findViewById(R.id.btn_actualizar);
         Button copiar = findViewById(R.id.btn_copiar);
         Button ajustes = findViewById(R.id.btn_ajustes);
-        Button prueba = findViewById(R.id.btn_prueba);
-        Button siguiente = findViewById(R.id.btn_siguiente);
         EditText etCfAccount = findViewById(R.id.et_cf_account);
         EditText etCfToken = findViewById(R.id.et_cf_token);
         EditText etKey = findViewById(R.id.et_api_key);
@@ -103,22 +101,6 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
         ajustes.setOnClickListener(abrirAjustes);
         aviso.setOnClickListener(abrirAjustes);
-
-        if (prueba != null) {
-            prueba.setOnClickListener(v -> {
-                LaylaAccessibilityService.programarPruebaEscritura();
-                Toast.makeText(this, "Ve a Layla y abre un chat. Escribo en 6 segundos.",
-                        Toast.LENGTH_LONG).show();
-            });
-        }
-
-        if (siguiente != null) {
-            siguiente.setOnClickListener(v -> {
-                LaylaAccessibilityService.programarPruebaSiguienteChat();
-                Toast.makeText(this, "Ve a Layla y abre un chat. Salto en 6 segundos.",
-                        Toast.LENGTH_LONG).show();
-            });
-        }
 
         detalles.setOnClickListener(v -> {
             boolean visible = salida.getVisibility() == View.VISIBLE;
