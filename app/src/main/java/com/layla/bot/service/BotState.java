@@ -12,7 +12,8 @@ public class BotState {
     private static final String K_ULTIMO = "ultimo_entrante";
     private static final String K_CONV = "conversacion";
     private static final String K_PANTALLA = "pantalla";
-    private static final String K_DIAG = "diagnostico";
+    private static final String K_ERROR = "error_fatal";
+    private static final String K_DIAGNOSTICO = "diagnostico";
 
     private final SharedPreferences prefs;
 
@@ -50,18 +51,26 @@ public class BotState {
         prefs.edit().putString(K_PANTALLA, p).apply();
     }
 
+    public void setError(String error) {
+        prefs.edit().putString(K_ERROR, error).apply();
+    }
+
     public void setDiagnostico(String d) {
-        prefs.edit().putString(K_DIAG, d).apply();
+        prefs.edit().putString(K_DIAGNOSTICO, d).apply();
     }
 
     public String informe() {
+        String error = prefs.getString(K_ERROR, "");
+        String avisoError = error.isEmpty() ? "" : "🚨 ERROR FATAL:\n" + error + "\n\n";
+
         boolean activo = prefs.getBoolean(K_ACTIVO, false);
         String aviso = activo ? ""
                 : "⚠️ El servicio de accesibilidad no está activo. Actívalo en Ajustes.\n\n";
-        return aviso
+
+        return avisoError + aviso
                 + "ESTADO: " + prefs.getString(K_ESTADO, "Aún no se ha leído ninguna pantalla.")
+                + "\nDIAGNÓSTICO: " + prefs.getString(K_DIAGNOSTICO, "")
                 + "\nPRUEBA DE ESCRITURA: " + prefs.getString(K_PRUEBA, "(sin probar)")
-                + "\nDIAGNÓSTICO: " + prefs.getString(K_DIAG, "(sin datos)")
                 + "\n\nÚLTIMO MENSAJE ENTRANTE:\n" + prefs.getString(K_ULTIMO, "(ninguno)")
                 + "\n\nCONVERSACIÓN VISIBLE:\n" + prefs.getString(K_CONV, "")
                 + "\n--- PANTALLA ---\n" + prefs.getString(K_PANTALLA, "");
